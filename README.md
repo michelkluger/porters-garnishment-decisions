@@ -27,6 +27,11 @@ person:
   only what failed.
 - **Footer:** the decision id and a link to the stored record (`GET /decisions/{id}`).
 
+Opened, *Every rule evaluated* lists all 23 checks run on this letter: the 7 that fired and sent it to a
+person, and the 16 that passed, each with its detail.
+
+![Every rule evaluated: each rule, its field, whether it passed or fired, and why](docs/every-rule.png)
+
 ## Layout
 
 ```
