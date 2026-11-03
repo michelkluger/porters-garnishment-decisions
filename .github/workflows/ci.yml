@@ -19,3 +19,35 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run ty check
       - run: uv run pytest
+
+  quickstart:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      # Start and check in one step: a process a step leaves running may not outlive it (Windows).
+      # A bare PATH hides any preinstalled uv or Bun, so the script has to install its own.
+      # Passes once the frontend answers and reaches the backend; stops early if the script exits.
+      - name: Quick start (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: |
+          PATH=/usr/bin:/bin ./start.sh > quickstart.log 2>&1 &
+          for i in $(seq 150); do
+            curl -fs -o /dev/null localhost:3000/api/docs && exit 0
+            kill -0 $! 2>/dev/null || break
+            sleep 2
+          done
+          cat quickstart.log; exit 1
+      - name: Quick start (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          $p = Start-Process powershell -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "start.ps1" -RedirectStandardOutput quickstart.log -RedirectStandardError quickstart.err -PassThru
+          for ($i = 0; $i -lt 150 -and -not $p.HasExited; $i++) {
+            try { Invoke-WebRequest http://localhost:3000/api/docs -TimeoutSec 2 | Out-Null; exit 0 } catch { Start-Sleep 2 }
+          }
+          Get-Content quickstart.log, quickstart.err; exit 1

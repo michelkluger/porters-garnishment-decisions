@@ -58,7 +58,19 @@ same files, and `main.py` mounts its router.
 
 ## Run it
 
-Needs [uv](https://docs.astral.sh/uv/) and [Bun](https://bun.com).
+One command on Windows, Linux or macOS. It installs whatever is missing ([uv](https://docs.astral.sh/uv/),
+which brings Python 3.14, and [Bun](https://bun.com)), installs the packages from the lockfiles, and starts
+the backend and the frontend. Ctrl+C stops both.
+
+```sh
+./start.sh                                           # Linux, macOS
+powershell -ExecutionPolicy Bypass -File start.ps1   # Windows
+```
+
+Then open http://localhost:3000 and drop any file from `samples/`. `PORT` (frontend) and `BACKEND_PORT` change
+the ports. On a fresh machine, open a new terminal afterwards so `uv` and `bun` are on your `PATH`.
+
+Or by hand, with uv and Bun installed:
 
 ```sh
 # backend: http://127.0.0.1:8000 (OpenAPI docs at /docs)
