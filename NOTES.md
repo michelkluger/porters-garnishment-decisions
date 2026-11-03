@@ -25,33 +25,33 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 
 ## Next steps
 
-1. **Run the real model over `samples/`** (`PORTERS_LLM_TESTS=1`) and fix the prompt where a sample misroutes.
+1. Run the real model over `samples/` (`PORTERS_LLM_TESTS=1`) and fix the prompt where a sample misroutes.
    Not done yet: no key in this environment. This is the biggest gap.
-2. **Build a labelled set of real (anonymised) letters**, then report a route confusion matrix. The numbers that
+2. Build a labelled set of real (anonymised) letters, then report a route confusion matrix. The numbers that
    matter: false `auto` (target 0), then false `reject`, then the `needs_human` rate (the cost).
-3. **Shadow mode:** run beside the clerks, compare routes, switch `auto` on only after a clean period. This is
-   how we would know the rules are right, rather than believing it.
-4. **Self-consistency:** two extractions, any disagreement → `needs_human`. Measure its catch rate against cost.
-5. **Reviewer loop:** a `needs_human` queue whose corrections become new labels and new test cases.
-6. **Case linking:** check a restriction against the stored original order (same case reference, prior amount).
+3. Shadow mode: run beside the clerks and compare routes. Switch `auto` on only after a clean period; that
+   period is the evidence the rules work.
+4. Self-consistency: two extractions, any disagreement → `needs_human`. Measure its catch rate against cost.
+5. Reviewer loop: a `needs_human` queue whose corrections become new labels and new test cases.
+6. Case linking: check a restriction against the stored original order (same case reference, prior amount).
 
 ## Risks
 
-- **Prompt untested against the live model.** The rules are tested against hand-built extractions only.
+- Prompt untested against the live model. The rules are tested against hand-built extractions only.
   Mitigation: step 1 above, then keep the sample suite as a regression gate on every prompt or model change.
-- **Overconfident wrong extraction that passes every check.** A grounded, well-formed, wrong value, e.g. the
+- Overconfident wrong extraction that passes every check. A grounded, well-formed, wrong value, e.g. the
   wrong one of two names that are both in the letter. The candidates list and self-consistency narrow this;
   only labelled data measures it.
-- **Grounding is substring matching.** Robust to whitespace, not to case, OCR noise or reformatting. Fine
+- Grounding is substring matching. Robust to whitespace, not to case, OCR noise or reformatting. Fine
   for `.txt`, insufficient once scans arrive.
-- **Number formats.** Only `4,250.00` style is parsed. A European `4.250,00` fails the value-vs-quote check
+- Number formats. Only `4,250.00` style is parsed. A European `4.250,00` fails the value-vs-quote check
   and goes to a human (safe, but noisy). Marked `shortcut:` in `rules.py`.
-- **IBAN check is shape + mod-97**, with no per-country length table. Also a `shortcut:` comment.
-- **Rule changes vs old decisions:** each record stores `rules_version` and `prompt_version`, but there is no
+- IBAN check is shape + mod-97, with no per-country length table. Also a `shortcut:` comment.
+- Rule changes vs old decisions: each record stores `rules_version` and `prompt_version`, but there is no
   migration or replay tooling yet, and no Alembic: the schema is created on startup.
-- **Sync SQLite calls inside an async endpoint.** Fine at prototype volume; move to a worker queue or an async
+- Sync SQLite calls inside an async endpoint. Fine at prototype volume; move to a worker queue or an async
   driver under real load.
-- **Demo mode switches on by itself when no key is set.** That's convenient for a prototype, but in production a
-  missing key must stop startup, not quietly replay recordings. Set `PORTERS_EXTRACTOR=llm` explicitly there.
-- **Letters contain personal data** and are stored in plain SQLite with no retention policy. Not acceptable
+- Demo mode switches on by itself when no key is set. That's convenient for a prototype. In production, set
+  `PORTERS_EXTRACTOR=llm`, and the app refuses to start without a key.
+- Letters contain personal data and are stored in plain SQLite with no retention policy. Not acceptable
   beyond a prototype.

@@ -4,10 +4,10 @@
 
 A bank receives court orders to seize a customer's funds. Today a clerk reads each one and makes one call:
 act on it, have a second person check it, or reject it. A wrong call is a regulated incident, so the call must
-be explainable afterwards. We automate **that call only**: not the seizure itself.
+be explainable afterwards. We automate that call only: not the seizure itself.
 
-The core tension: extraction is probabilistic, the decision must be deterministic and defensible. So the
-design draws one hard line: **the model reads, the code decides.** The model never outputs a route.
+Extraction is probabilistic, but the decision must be deterministic and defensible. So the model only reports
+what the letter says, and code picks the route: the model's output has no route field.
 
 ## Requirements and scope
 
@@ -37,13 +37,13 @@ nearly everything), so a threshold on them cannot be defended. Instead, per fiel
 
 A field's **confidence** is the outcome of those rules: `high` (all passed), `low` (a rule sent it to a
 human), `invalid` (a hard validation failed), `absent`. Every rule result is stored with a plain-language
-detail, so "why" is never reconstructed, it is read.
+detail, so the reason for a route can be read from the record later.
 
-**The threshold is zero tolerance:** `auto` requires every rule to pass. The costs are asymmetric: a wrong
+The threshold is zero tolerance: `auto` requires every rule to pass. The costs are asymmetric: a wrong
 `auto` is an incident; a wrong `needs_human` costs a clerk a minute, and clerks read every letter today, so
 any `auto` is already a gain. Start strict, loosen only with measured evidence (see NOTES).
 
-**A reject is also an automatic decision**, and ignoring a valid order is an incident too. So rejects fire
+A reject is also an automatic decision, and ignoring a valid order is an incident too. So rejects fire
 only on evidence that is printed in the letter: "no amount" needs both the model *and* the code's own scan to
 find none; a malformed case reference must appear verbatim in the letter; "not a garnishment" is the model's
 judgement, so it rejects only a letter that cites no EUR sum. A model that says "absent" while the letter
@@ -94,10 +94,9 @@ from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 
 - **Evidence + code checks vs model-reported confidence numbers:** above. A number may be added later as one
   more recorded signal, but routed on only once calibrated against real outcomes.
 - **One model call vs asking twice and comparing (self-consistency):** disagreement is a strong uncertainty
-  signal, but it doubles cost and latency. The grounding checks catch most of what it would. First upgrade.
+  signal, but it doubles cost and latency. The grounding checks catch most of what it would. It is the first upgrade to try.
 - **Fail to human on model errors**, not `503`: the letter is stored and routed; nothing is lost. Bugs in the
-  rules, by contrast, stay a loud `500`, so they are not hidden behind `needs_human`; the letter is still stored
-  first (`RULES_FAILED`), so it is not lost either.
+  rules still return `500` so they get noticed, but the letter is stored first as `RULES_FAILED`.
 - **Prompt injection:** the letter is wrapped and declared untrusted, but the real defence is structural:
   the model cannot pick the route, every value must be found in the letter, and its document type alone cannot
   reject a letter that cites an EUR sum.
@@ -117,14 +116,19 @@ from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 
 Built first, in this order: (1) rules and their table of tests, which needs no model; (2) extraction schema,
 prompt and extractor; (3) storage and API; (4) test page; (5) docs.
 
-The full build after this slice: a labelled evaluation set of real letters and a shadow-mode run against
-clerks → threshold tuning from that data → reviewer queue for `needs_human` with corrections fed back as
-labels → idempotency and case linking (restriction ↔ original order) → OCR/PDF intake → auth, audit export,
-retention → execution, in a separate service with its own controls.
+The full build after this slice, in order:
+
+1. A labelled evaluation set of real letters and a shadow-mode run against clerks.
+2. Threshold tuning from that data.
+3. A reviewer queue for `needs_human`, with corrections fed back as labels.
+4. Idempotency, and case linking (checking a restriction against its original order).
+5. OCR/PDF intake.
+6. Auth, audit export and retention.
+7. Execution, in a separate service with its own controls.
 
 ## Where I deliberately stopped
 
-At the decision. The rules have not been tuned on real letters: the samples are three given plus six I wrote,
+I stopped at the decision. The rules have not been tuned on real letters: the samples are three given plus six I wrote,
 and the prompt has not yet been run against the real model (no key in this environment). Open decisions I did
 not resolve on my own are listed in `NOTES.md`; where code needed some behaviour, it takes the safe side
 (`needs_human`) and is marked `OPEN` in a comment.

@@ -183,7 +183,7 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
               f"{f.value} is not the figure in {quote!r}", "value matches its quote"),
         _rule("AMOUNT_HEDGED", name, bool(_HEDGE.search(quote)), NH,
               f"amount is hedged: {quote!r}", "no hedging words"),
-        # the model's currency alone is not enough: the figure must be printed as EUR in the letter
+        # the figure must also be printed as EUR in the letter, whatever currency the model reports
         _rule("AMOUNT_NOT_EUR", name, not eur, NH,
               f"not shown as EUR: model said {f.currency!r}, the letter's EUR figures are "
               f"{sorted(map(str, in_letter))}", "currency EUR, printed as EUR in the letter"),
