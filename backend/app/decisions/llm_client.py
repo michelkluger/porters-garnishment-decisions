@@ -1,5 +1,7 @@
 """LLM adapter: the only module that talks to a model. It reports what the letter says, never what to do."""
 
+import json
+from pathlib import Path
 from typing import Protocol
 
 from pydantic_ai import Agent, NativeOutput
@@ -60,3 +62,30 @@ class LLMExtractor:
     async def extract(self, text: str) -> Extraction:
         result = await self._agent.run(f"<letter>\n{text}\n</letter>")
         return result.output
+
+
+def _letter_key(text: str) -> str:
+    return "\n".join(text.strip().splitlines())  # same letter whether uploaded with LF or CRLF
+
+
+class RecordedExtractor:
+    """Replays extractions recorded from an earlier real model run, so the app can be demoed without a key.
+
+    shortcut: matches by exact letter text, so only the recorded sample letters work; any other letter
+    fails into needs_human. Live extraction (LLMExtractor) is used whenever an API key is set.
+    """
+
+    def __init__(self, path: Path):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.model_name = f"recorded:{data['model']}"
+        self._by_letter = {
+            _letter_key(item["letter"]): Extraction.model_validate(item["extraction"]) for item in data["items"]
+        }
+
+    async def extract(self, text: str) -> Extraction:
+        try:
+            return self._by_letter[_letter_key(text)]
+        except KeyError:
+            raise LookupError(
+                "no recorded extraction for this letter; set ANTHROPIC_API_KEY for live extraction"
+            ) from None

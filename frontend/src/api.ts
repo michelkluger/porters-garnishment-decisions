@@ -27,6 +27,8 @@ export interface Decision {
   fields: Record<string, FieldEvidence>;
   document_rules: RuleResult[];
   rules_version: string;
+  letter_text: string;
+  extraction: { document_type: string; amount: { currency: string | null } } | null; // only what the UI reads
   model: string;
   prompt_version: string;
   error: string | null;

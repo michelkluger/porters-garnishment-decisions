@@ -1,1 +1,31 @@
 @import "../styles/globals.css";
+
+/* Decision path animation (DecisionPath.tsx). Base styles are the final state; animations start from hidden. */
+@keyframes dp-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dp-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes dp-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+@keyframes dp-dim {
+  from {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dp-anim {
+    animation: none !important;
+  }
+  .dp-flow {
+    display: none;
+  }
+}

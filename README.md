@@ -43,12 +43,18 @@ bun install
 bun dev
 ```
 
-Drop any file from `samples/` onto the page. Without an API key the service still runs: every letter is stored
-as `needs_human` / `EXTRACTION_FAILED` with the reason, because a letter must never be lost.
+Drop any file from `samples/` onto the page.
+
+**Without an API key the app runs in demo mode.** Instead of calling the model, it replays real Haiku readings
+recorded from a blind run over `samples/` (`backend/recordings/haiku-subagent.json`). Every decision made this
+way is labelled `recorded:claude-haiku`. A letter with no recording is stored as `needs_human` /
+`EXTRACTION_FAILED`, because a letter must never be lost. With a key set, every letter is a live model call.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (none) | credentials for the default model |
+| `PORTERS_EXTRACTOR` | `llm` if a key is set, else `recorded` | force live calls (`llm`) or replay (`recorded`) |
+| `PORTERS_RECORDINGS` | `backend/recordings/haiku-subagent.json` | recordings replayed in demo mode |
 | `PORTERS_MODEL` | `anthropic:claude-opus-5-5` | any Pydantic AI model string, e.g. another provider |
 | `PORTERS_DB_URL` | `sqlite:///porters.db` | SQLAlchemy URL of the decision log |
 | `API_URL` (frontend) | `http://127.0.0.1:8000` | where the Bun server forwards `/api/*` |
@@ -67,7 +73,7 @@ source quote, every rule evaluated (fired or not), the raw extraction and the mo
 
 ```sh
 cd backend
-uv run pytest                                           # rules + API, no model, ~2 s
+uv run pytest                                           # rules, API, recorded Haiku readings; no key, ~5 s
 PORTERS_LLM_TESTS=1 uv run pytest tests/test_samples_llm.py  # real model over every labelled sample (costs money)
 cd ../frontend && bun run typecheck
 ```

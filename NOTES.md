@@ -47,5 +47,7 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
   migration or replay tooling yet, and no Alembic: the schema is created on startup.
 - **Sync SQLite calls inside an async endpoint.** Fine at prototype volume; move to a worker queue or an async
   driver under real load.
+- **Demo mode switches on by itself when no key is set.** That's convenient for a prototype, but in production a
+  missing key must stop startup, not quietly replay recordings. Set `PORTERS_EXTRACTOR=llm` explicitly there.
 - **Letters contain personal data** and are stored in plain SQLite with no retention policy. Not acceptable
   beyond a prototype.
