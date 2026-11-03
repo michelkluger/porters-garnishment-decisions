@@ -4,6 +4,31 @@ A court letter comes in. An LLM reads it, deterministic rules route it to `auto`
 and the decision is stored with the evidence that produced it. `DESIGN.md` explains why; `NOTES.md` lists
 next steps, risks and the decisions still open.
 
+![The workbench: a drop zone for court letters, and one card per decided letter with its route](docs/workbench.png)
+
+## What a decision card shows
+
+Each letter dropped on the workbench becomes a card. This one is `samples/02-vague-follow-up`, routed to a
+person:
+
+![A needs_human decision card: decision path, reasons, extracted fields](docs/decision-card.png)
+
+- **Header:** the file, when it was decided, which model read it (`recorded:` means a replayed reading in
+  demo mode), the rules version, and the route. Click the header to fold the card.
+- **Decision path:** letter → model extraction → one lane per field → that field's checks → the route each
+  lane forces. The most severe route wins (reject › needs human › auto). Hover a node to see its rules;
+  *Replay* reruns the animation.
+- **Why:** every rule that fired, with what it found. Here, an initial instead of a full name, an amount
+  written only in hedged words, and no IBAN.
+- **Extracted fields:** for each field, the value, the confidence the rules gave it (`high`, `low`,
+  `invalid`, `absent`), what the model itself said (`explicit`, `approximate`, `partial`...) and the exact
+  quote from the letter it came from.
+- **Every rule evaluated:** the full list, passed or fired, so a reviewer can see what was checked and not
+  only what failed.
+- **Footer:** the decision id and a link to the stored record (`GET /decisions/{id}`).
+
+## Layout
+
 ```
 backend/app/
   main.py                 app factory: builds engine + LLM client once, mounts routers
