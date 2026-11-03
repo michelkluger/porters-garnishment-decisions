@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -121,5 +121,7 @@ class DecisionResponse(Decision):
     letter_text: str
     extraction: Extraction | None
     model: str
+    usage: dict[str, Any] | None
+    cost_usd: float | None  # float, not Decimal: same JSON before and after the DB round trip ("0.014" vs "0.014000")
     prompt_version: str
     error: str | None

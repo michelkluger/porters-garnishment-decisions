@@ -4,12 +4,14 @@ A fixed extractor stands in for the model so the HTTP and storage behaviour is e
 exercised in test_samples_llm.py.
 """
 
+from decimal import Decimal
 from http import HTTPStatus
 from typing import TYPE_CHECKING, override
 from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai.usage import RunUsage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,10 +36,22 @@ class FixedExtractor(Extractor):
         self.result = result
 
     @override
-    async def extract(self, text: str) -> Extraction:
+    async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
+
+
+class BilledExtractor(FixedExtractor):
+    """Like FixedExtractor, but first spends 1,000 input and 500 output tokens on Claude Opus 5.5."""
+
+    model_name = "anthropic:claude-opus-5-5"
+
+    @override
+    async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
+        assert usage is not None
+        usage.incr(RunUsage(requests=1, input_tokens=1_000, output_tokens=500, cost=Decimal("0.014")))
+        return await super().extract(text, usage)
 
 
 @pytest.fixture
@@ -92,6 +106,23 @@ def test_rules_crash_is_loud_but_the_letter_is_kept(db_url: str, monkeypatch: py
     with Session(app.state.engine) as session:
         row = session.scalars(select(DecisionRow)).one()
     assert (row.route, row.primary_rule, row.letter_text) == ("needs_human", "RULES_FAILED", LETTER_1.strip())
+    assert (row.usage, row.cost_usd) == (None, None)  # FixedExtractor makes no model call
+
+
+@pytest.mark.parametrize("result", [ex1(), RuntimeError("model unavailable")], ids=["ok", "failed"])
+def test_tokens_and_cost_are_stored_also_when_the_call_fails(result: Extraction | Exception, db_url: str) -> None:
+    """Each decision keeps its model call's tokens and cost, also when the call failed: it was paid for."""
+    app = create_app(BilledExtractor(result), db_url)
+    posted = TestClient(app).post("/decisions", json={"text": LETTER_1}).json()
+    with Session(app.state.engine) as session:
+        row = session.scalars(select(DecisionRow)).one()
+    assert row.usage is not None
+    assert (row.usage["requests"], row.usage["input_tokens"], row.usage["output_tokens"]) == (1, 1_000, 500)
+    assert row.cost_usd == Decimal("0.014")
+    # the UI reads these from the API, the same before and after the round trip through the database
+    got = TestClient(app).get(f"/decisions/{posted['id']}").json()
+    assert (got["usage"]["input_tokens"], got["usage"]["output_tokens"], got["cost_usd"]) == (1_000, 500, 0.014)
+    assert got == posted
 
 
 @pytest.mark.parametrize("payload", [{"text": ""}, {"text": "   "}, {"text": "x" * 50_001}, {}])

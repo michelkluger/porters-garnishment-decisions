@@ -2,8 +2,11 @@
 
 import logging
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+from pydantic_ai.usage import RunUsage
 
 from .llm_client import PROMPT_VERSION, Extractor
 from .models import DecisionRow
@@ -26,19 +29,20 @@ class DecisionService:
 
     async def create(self, text: str) -> DecisionResponse:
         """Extract, decide and record. Every letter is recorded, even when the model or the rules fail."""
+        usage = RunUsage()  # failed calls are paid for too, so usage is recorded on every path
         try:
-            extraction = await self._extractor.extract(text)
+            extraction = await self._extractor.extract(text, usage)
         except Exception as e:  # model down, refusal, bad output: never lose the letter, a human reads it
             log.exception("extraction failed")
             error = f"{type(e).__name__}: {e}"
-            return self._record(text, None, extraction_failed(error), error)
+            return self._record(text, usage, None, extraction_failed(error), error)
         try:
             decision = decide(text, extraction)
         except Exception as e:  # a rules bug: keep the letter on record for a human, then stay loud (500)
             error = f"{type(e).__name__}: {e}"
-            self._record(text, extraction, extraction_failed(error, rule="RULES_FAILED"), error)
+            self._record(text, usage, extraction, extraction_failed(error, rule="RULES_FAILED"), error)
             raise
-        return self._record(text, extraction, decision, None)
+        return self._record(text, usage, extraction, decision, None)
 
     def get(self, decision_id: str) -> DecisionResponse | None:
         """Return a recorded decision, or None if there is none with this id."""
@@ -46,7 +50,7 @@ class DecisionService:
         return _to_response(row) if row else None
 
     def _record(
-        self, text: str, extraction: Extraction | None, decision: Decision, error: str | None
+        self, text: str, usage: RunUsage, extraction: Extraction | None, decision: Decision, error: str | None
     ) -> DecisionResponse:
         # OPEN: a repeated letter is not detected and gets a second decision (NOTES.md, open decision 7).
         row = self._repository.add(
@@ -60,6 +64,9 @@ class DecisionService:
                 extraction=extraction.model_dump(mode="json") if extraction else None,
                 decision=decision.model_dump(mode="json"),
                 model=self._extractor.model_name,
+                # cost has its own column; the raw counts stay so the cost can be checked later
+                usage={k: v for k, v in asdict(usage).items() if k != "cost"} if usage.requests else None,
+                cost_usd=usage.cost,
                 prompt_version=PROMPT_VERSION,
                 rules_version=decision.rules_version,
                 error=error,
@@ -76,6 +83,8 @@ def _to_response(row: DecisionRow) -> DecisionResponse:
         created_at=row.created_at.replace(tzinfo=UTC),  # stored as UTC; SQLite drops the tzinfo
         extraction=row.extraction,
         model=row.model,
+        usage=row.usage,
+        cost_usd=row.cost_usd,
         prompt_version=row.prompt_version,
         error=row.error,
     )

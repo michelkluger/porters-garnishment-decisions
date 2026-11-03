@@ -1,6 +1,6 @@
 {
-  "model": "claude-haiku",
-  "source": "Claude Code Haiku subagent, blind run over samples/ (labels hidden), 2026-11-03",
+  "model": "claude-haiku-5-5",
+  "source": "Claude Code subagent on claude-haiku-5-5, blind run over samples/ (labels hidden), 2026-11-03",
   "prompt_version": "2026-11-03.1",
   "items": [
     {

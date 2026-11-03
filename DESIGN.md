@@ -83,8 +83,11 @@ that takes 4,250 trips `RESTRICTION_NOT_REDUCING`; one that ignores the other fi
 One append-only SQLite table, `decisions` (`backend/app/decisions/models.py`): `id`, `created_at`, `route`,
 `primary_rule`, `case_reference` (indexed columns for filtering), `letter_text` (needed to re-run grounding
 checks), `extraction` (model output as received, JSON), `decision` (per-field evidence and every rule, JSON),
-`model`, `prompt_version`, `rules_version`, `error`. JSON columns rather than evidence tables because the
-evidence is always read whole. Rows are never updated.
+`model`, `usage` (Pydantic AI's token counts for the model call, JSON), `cost_usd` (priced by Pydantic AI at
+call time, since prices change; empty when the model has no price; in demo mode an estimate, about 4
+characters per token priced at the recorded model's rates, marked as an estimate in the UI), `prompt_version`,
+`rules_version`, `error`. A failed model call still records its usage and cost, because it was paid for. JSON
+columns rather than evidence tables because the evidence is always read whole. Rows are never updated.
 
 `POST /decisions {"text": "..."}` → `201` with the full decision. `GET /decisions/{id}` → the same record
 from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 50,000 characters → `422`).

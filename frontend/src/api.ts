@@ -30,6 +30,8 @@ export interface Decision {
   letter_text: string;
   extraction: { document_type: string; amount: { currency: string | null } } | null; // only what the UI reads
   model: string;
+  usage: { requests: number; input_tokens: number; output_tokens: number } | null; // only what the UI reads; null: no model call
+  cost_usd: number | null; // null: no model call, or no price known for the model
   prompt_version: string;
   error: string | null;
 }

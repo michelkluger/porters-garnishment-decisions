@@ -23,6 +23,8 @@ person:
 - **Extracted fields:** for each field, the value, the confidence the rules gave it (`high`, `low`,
   `invalid`, `absent`), what the model itself said (`explicit`, `approximate`, `partial`...) and the exact
   quote from the letter it came from.
+- **Model call:** the model and prompt version, input and output tokens, and the cost, also per 1,000 letters.
+  In demo mode no model is called, so these are an estimate, marked ≈.
 - **Every rule evaluated:** the full list, passed or fired, so a reviewer can see what was checked and not
   only what failed.
 - **Footer:** the decision id and a link to the stored record (`GET /decisions/{id}`).
@@ -87,9 +89,9 @@ bun dev
 
 Drop any file from `samples/` onto the page.
 
-**Without an API key the app runs in demo mode.** Instead of calling the model, it replays real Haiku readings
+**Without an API key the app runs in demo mode.** Instead of calling the model, it replays real Haiku 5.5 readings
 recorded from a blind run over `samples/` (`backend/recordings/haiku-subagent.json`). Every decision made this
-way is labelled `recorded:claude-haiku`. A letter with no recording is stored as `needs_human` /
+way is labelled `recorded:claude-haiku-5-5`. A letter with no recording is stored as `needs_human` /
 `EXTRACTION_FAILED`, because a letter must never be lost. With a key set, every letter is a live model call.
 
 | Variable | Default | Meaning |

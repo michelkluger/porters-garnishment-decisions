@@ -1,9 +1,12 @@
 """LLM adapter: the only module that talks to a model. It reports what the letter says, never what to do."""
 
 import json
+from contextlib import suppress
 from typing import TYPE_CHECKING, Protocol
 
+from genai_prices import calc_price
 from pydantic_ai import Agent, NativeOutput
+from pydantic_ai.usage import RunUsage
 
 from .schema import Extraction
 
@@ -52,8 +55,8 @@ class Extractor(Protocol):
 
     model_name: str
 
-    async def extract(self, text: str) -> Extraction:
-        """Report what the letter says."""
+    async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
+        """Report what the letter says, adding any model call's tokens and cost to `usage`."""
         ...
 
 
@@ -66,9 +69,9 @@ class LLMExtractor:
         # Missing credentials fail here, at startup; keyless runs use RecordedExtractor (demo mode).
         self._agent = Agent(model, output_type=NativeOutput(Extraction), instructions=PROMPT)
 
-    async def extract(self, text: str) -> Extraction:
-        """Ask the model what the letter says."""
-        result = await self._agent.run(f"<letter>\n{text}\n</letter>")
+    async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
+        """Ask the model what the letter says. `usage` collects tokens and cost even if the run fails."""
+        result = await self._agent.run(f"<letter>\n{text}\n</letter>", usage=usage)
         return result.output
 
 
@@ -91,10 +94,26 @@ class RecordedExtractor:
             _letter_key(item["letter"]): Extraction.model_validate(item["extraction"]) for item in data["items"]
         }
 
-    async def extract(self, text: str) -> Extraction:
-        """Return the recorded reading of this letter; LookupError if it was never recorded."""
+    async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
+        """Return the recorded reading of this letter; LookupError if it was never recorded.
+
+        The recordings have no token counts, so `usage` gets an estimate of what the recorded call spent.
+        """
         try:
-            return self._by_letter[_letter_key(text)]
+            extraction = self._by_letter[_letter_key(text)]
         except KeyError:
             msg = "no recorded extraction for this letter; set ANTHROPIC_API_KEY for live extraction"
             raise LookupError(msg) from None
+        if usage is not None:
+            usage.incr(_estimated_usage(text, extraction, self.model_name.removeprefix("recorded:")))
+        return extraction
+
+
+def _estimated_usage(text: str, extraction: Extraction, model: str) -> RunUsage:
+    """Roughly what one call on this letter spends: prompt, output schema and letter in, the reading out."""
+    # shortcut: ~4 characters per token, no tokenizer; only demo mode uses it, live runs record real counts
+    sent = PROMPT + json.dumps(Extraction.model_json_schema()) + text
+    estimate = RunUsage(requests=1, input_tokens=len(sent) // 4, output_tokens=len(extraction.model_dump_json()) // 4)
+    with suppress(LookupError):  # no price for this model: tokens only, the cost stays unknown (None)
+        estimate.cost = calc_price(estimate, model, provider_id="anthropic").total_price  # recordings are Claude runs
+    return estimate

@@ -40,8 +40,12 @@ def test_demo_mode_replays_known_letters_and_sends_unknown_ones_to_a_human(tmp_p
     """Without a key, recorded letters are decided and any other letter goes to a person."""
     c = TestClient(create_app(RecordedExtractor(RECORDINGS), f"sqlite:///{tmp_path / 'demo.db'}"))
     known = c.post("/decisions", json={"text": ITEMS[0]["letter"]}).json()
-    assert known["model"] == "recorded:claude-haiku"
+    assert known["model"] == "recorded:claude-haiku-5-5"
     assert known["primary_rule"] != "EXTRACTION_FAILED"
+    # an estimate of what the live call would cost, so the UI has tokens and cost to show without a key
+    assert known["usage"]["input_tokens"] > known["usage"]["output_tokens"] > 0
+    assert 0 < known["cost_usd"] < 0.1  # noqa: PLR2004  a letter costs cents, not dollars
     unknown = c.post("/decisions", json={"text": "A letter nobody recorded."}).json()
     assert (unknown["route"], unknown["primary_rule"]) == ("needs_human", "EXTRACTION_FAILED")
     assert "set ANTHROPIC_API_KEY" in unknown["error"]
+    assert (unknown["usage"], unknown["cost_usd"]) == (None, None)

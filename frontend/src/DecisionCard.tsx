@@ -10,6 +10,63 @@ import { FIELD_LABELS, ROUTES, TONES, type Tone } from "./tones";
 
 const CONFIDENCE: Record<Confidence, Tone> = { high: "good", low: "warn", invalid: "bad", absent: "none" };
 
+// Two significant digits: a letter costs fractions of a cent, so a fixed number of decimals would show $0.00.
+const usd = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumSignificantDigits: 2 });
+
+function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-[#C5CBD3]/70 px-4 py-3">
+      <p className="text-muted-foreground text-xs">{label}</p>
+      <p className="mt-1 truncate text-xl font-semibold tabular-nums" title={value}>
+        {value}
+      </p>
+      <p className="text-muted-foreground mt-0.5 text-xs">{sub}</p>
+    </div>
+  );
+}
+
+// Which model read the letter, and what that call spent. A replayed (demo) reading made no call: estimate, marked ≈.
+function ModelCall({ decision: d }: { decision: Decision }) {
+  const colon = d.model.indexOf(":"); // "anthropic:claude-opus-5-5", "recorded:claude-haiku-5-5"
+  const [source, name] = [d.model.slice(0, Math.max(colon, 0)), d.model.slice(colon + 1)];
+  const recorded = source === "recorded";
+  const approx = recorded ? "≈ " : "";
+  const u = d.usage;
+  const tokens = (n: number | undefined) => (n === undefined ? "—" : approx + n.toLocaleString());
+  const retries = u && u.requests > 1 ? ` · ${u.requests} requests` : "";
+  return (
+    <div>
+      <Label>Model call</Label>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat
+          label="Model"
+          value={name}
+          sub={`${recorded ? "replayed" : source || "model"} · prompt ${d.prompt_version}`}
+        />
+        <Stat label="Input tokens" value={tokens(u?.input_tokens)} sub="prompt, schema and letter" />
+        <Stat label="Output tokens" value={tokens(u?.output_tokens)} sub="the reading" />
+        <Stat
+          label="Cost"
+          value={d.cost_usd == null ? "—" : approx + usd(d.cost_usd)}
+          sub={
+            d.cost_usd == null
+              ? u
+                ? "no price known for this model"
+                : "no model call"
+              : `${approx}${usd(d.cost_usd * 1000)} per 1,000 letters${retries}`
+          }
+        />
+      </div>
+      {recorded && u && (
+        <p className="text-muted-foreground mt-2 text-xs">
+          Demo estimate: no model was called. Tokens are counted at about 4 characters each and priced at {name}'s
+          rates.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Pill({ tone, children, large }: { tone: Tone; children: React.ReactNode; large?: boolean }) {
   return (
     <Badge variant="outline" className={cn("gap-1.5", large && "px-4 py-1.5 text-sm", TONES[tone].pill)}>
@@ -150,6 +207,8 @@ function DecisionBody({ decision }: { decision: Decision }) {
           </Table>
         </div>
       )}
+
+      <ModelCall decision={decision} />
 
       <Collapsible>
         <CollapsibleTrigger className="text-primary group inline-flex items-center gap-1 text-sm font-medium">
