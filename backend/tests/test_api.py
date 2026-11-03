@@ -3,7 +3,10 @@ storage behaviour is exact; the real model is exercised in test_samples_llm.py."
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.decisions.models import DecisionRow
 from app.main import create_app
 from test_rules import LETTER_1, ex1
 
@@ -56,7 +59,20 @@ def test_model_failure_is_recorded_as_needs_human(db_url):
     assert c.get(f"/decisions/{body['id']}").json()["error"] == "RuntimeError: model unavailable"
 
 
-@pytest.mark.parametrize("payload", [{"text": ""}, {"text": "   "}, {"text": "x" * 50_001}, {}])
+def test_rules_crash_is_loud_but_the_letter_is_kept(db_url, monkeypatch):
+    def broken_rules(text, extraction):
+        raise ZeroDivisionError("bug in the rules")
+
+    monkeypatch.setattr("app.decisions.service.decide", broken_rules)
+    app = create_app(FixedExtractor(ex1()), db_url)
+    with pytest.raises(ZeroDivisionError):
+        TestClient(app).post("/decisions", json={"text": LETTER_1})
+    with Session(app.state.engine) as session:
+        row = session.scalars(select(DecisionRow)).one()
+    assert (row.route, row.primary_rule, row.letter_text) == ("needs_human", "RULES_FAILED", LETTER_1.strip())
+
+
+@pytest.mark.parametrize("payload",[{"text": ""}, {"text": "   "}, {"text": "x" * 50_001}, {}])
 def test_invalid_input_is_rejected(payload, db_url):
     assert client(ex1(), db_url).post("/decisions", json=payload).status_code == 422
 

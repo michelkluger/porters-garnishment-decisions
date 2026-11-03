@@ -54,10 +54,8 @@ class Extractor(Protocol):
 class LLMExtractor:
     def __init__(self, model: str):
         self.model_name = model
-        # defer_model_check: the API can start without credentials; calls then fail into needs_human.
-        self._agent = Agent(
-            model, output_type=NativeOutput(Extraction), instructions=PROMPT, defer_model_check=True
-        )
+        # Missing credentials fail here, at startup; keyless runs use RecordedExtractor (demo mode).
+        self._agent = Agent(model, output_type=NativeOutput(Extraction), instructions=PROMPT)
 
     async def extract(self, text: str) -> Extraction:
         result = await self._agent.run(f"<letter>\n{text}\n</letter>")

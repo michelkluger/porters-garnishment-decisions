@@ -30,10 +30,10 @@ nearly everything), so a threshold on them cannot be defended. Instead, per fiel
 
 | From the model | Checked by code |
 |---|---|
-| `value` | does it parse, is it well-formed (case-reference pattern, IBAN mod-97, amount > 0, EUR) |
+| `value` | does it parse, is it well-formed (case-reference pattern, IBAN mod-97, amount > 0, printed as EUR in the letter) |
 | `source_quote`, copied verbatim | is the quote really in the letter (catches hallucination and injection) |
 | `status`: explicit / approximate / partial / ambiguous / absent | does the value follow from its quote |
-| `other_candidates` with a role | the code scans the letter for every EUR figure and requires each to be accounted for |
+| `other_candidates` with a role | the code scans the letter for every EUR figure and requires each to be accounted for; a rival not among those figures is ignored |
 
 A field's **confidence** is the outcome of those rules: `high` (all passed), `low` (a rule sent it to a
 human), `invalid` (a hard validation failed), `absent`. Every rule result is stored with a plain-language
@@ -45,26 +45,32 @@ any `auto` is already a gain. Start strict, loosen only with measured evidence (
 
 **A reject is also an automatic decision**, and ignoring a valid order is an incident too. So rejects fire
 only on evidence that is printed in the letter: "no amount" needs both the model *and* the code's own scan to
-find none; a malformed case reference must appear verbatim in the letter. A model that says "absent" while the
-letter contains a figure is a *miss* and goes to a human, not to reject.
+find none; a malformed case reference must appear verbatim in the letter; "not a garnishment" is the model's
+judgement, so it rejects only a letter that cites no EUR sum. A model that says "absent" while the letter
+contains a figure is a *miss* and goes to a human, not to reject.
 
-## The rules (`backend/app/decisions/rules.py`, rules version 1)
+## The rules (`backend/app/decisions/rules.py`, rules version 2)
 
 All rules are always evaluated; the route is the most severe that fired (reject > needs_human > auto); the
 first such rule in a fixed order is the `primary_rule`.
 
 - **Reject:** `NOT_A_GARNISHMENT`, `CASE_REFERENCE_MISSING`, `CASE_REFERENCE_MALFORMED`, `AMOUNT_MISSING`,
   `AMOUNT_NOT_POSITIVE`. Each only on grounded evidence, as above.
-- **Needs human, per field:** `*_NOT_IN_LETTER` (quote not found), `*_VALUE_NOT_IN_QUOTE` (misread),
-  `*_UNCERTAIN` (model said approximate/partial/ambiguous), `*_HAS_ALTERNATIVES` (rival values for a
-  single-valued field), `*_MISSED` (model says absent, letter has it).
-- **Needs human, field-specific:** `DEBTOR_NAME_PARTIAL` (initial-only or one word), `AMOUNT_NOT_A_FIGURE`,
-  `AMOUNT_HEDGED`, `AMOUNT_NOT_EUR`, `AMOUNT_UNEXPLAINED_FIGURES`, `RESTRICTION_NOT_REDUCING`,
-  `ACCOUNT_IBAN_INVALID`, `ACCOUNT_IBAN_MISSING`, `DEBTOR_NAME_MISSING`, `DOCUMENT_TYPE_NOT_IN_LETTER`.
-- **Needs human, system:** `EXTRACTION_FAILED` (model down, refusal, schema-invalid output).
+- **Needs human, per field:** `*_NOT_IN_LETTER` (quote not found; case-sensitive, spacing-tolerant),
+  `*_VALUE_NOT_IN_QUOTE` (misread; a name or case reference must appear whole and exactly as written, so
+  `AB-1042/2` is not in `AB-1042/24`), `*_UNCERTAIN` (model said approximate/partial/ambiguous),
+  `*_HAS_ALTERNATIVES` (rival values for a single-valued field), `*_MISSED` (model says absent, letter has it).
+- **Needs human, field-specific:** `DEBTOR_NAME_PARTIAL` (initial-only, one word, or title + surname),
+  `AMOUNT_NOT_A_FIGURE`, `AMOUNT_HEDGED`, `AMOUNT_NOT_EUR`, `AMOUNT_UNEXPLAINED_FIGURES`,
+  `RESTRICTION_NOT_REDUCING`, `ACCOUNT_IBAN_INVALID`, `ACCOUNT_IBAN_MISSING`, `DEBTOR_NAME_MISSING`,
+  `DOCUMENT_TYPE_NOT_IN_LETTER`, `NOT_A_GARNISHMENT_UNCONFIRMED` (model says "not a garnishment", but the letter
+  cites an EUR sum).
+- **Needs human, system:** `EXTRACTION_FAILED` (model down, refusal, schema-invalid output), `RULES_FAILED`
+  (a bug in the rules; also returned as `500`).
 
 Several rules are deterministic backstops for an overconfident model: `DEBTOR_NAME_PARTIAL` and
-`AMOUNT_NOT_A_FIGURE` fire even when the model claims "explicit".
+`AMOUNT_NOT_A_FIGURE` fire even when the model claims "explicit", and `AMOUNT_NOT_EUR` fires when the model
+says EUR but the figure is not printed as EUR in the letter.
 
 How the samples come out: letter 1 → nothing fires → `auto`. Letter 2 → partial name, prose amount, hedge,
 no IBAN → `needs_human` (not reject: an amount is present, only inexact). Letter 3 → two figures; the model
@@ -90,9 +96,11 @@ from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 
 - **One model call vs asking twice and comparing (self-consistency):** disagreement is a strong uncertainty
   signal, but it doubles cost and latency. The grounding checks catch most of what it would. First upgrade.
 - **Fail to human on model errors**, not `503`: the letter is stored and routed; nothing is lost. Bugs in the
-  rules, by contrast, stay a loud `500`, so they are not hidden behind `needs_human`.
+  rules, by contrast, stay a loud `500`, so they are not hidden behind `needs_human`; the letter is still stored
+  first (`RULES_FAILED`), so it is not lost either.
 - **Prompt injection:** the letter is wrapped and declared untrusted, but the real defence is structural:
-  the model cannot set the route, and every value must be found in the letter.
+  the model cannot pick the route, every value must be found in the letter, and its document type alone cannot
+  reject a letter that cites an EUR sum.
 - **Pydantic AI + native structured output** (requested): the model's answer is schema-constrained, the
   provider is a config string, and the `Extractor` protocol keeps the rules testable without any model.
 - **Layered backend, one package per domain** (`app/decisions/`): router (HTTP) → service (use case) →

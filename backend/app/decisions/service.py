@@ -19,7 +19,7 @@ class DecisionService:
         self._repository = repository
 
     async def create(self, text: str) -> DecisionResponse:
-        extraction, error = None, None
+        extraction, error, crash = None, None, None
         try:
             extraction = await self._extractor.extract(text)
         except Exception as e:  # model down, refusal, bad output: never lose the letter, a human reads it
@@ -27,7 +27,12 @@ class DecisionService:
             error = f"{type(e).__name__}: {e}"
             decision = extraction_failed(error)
         else:
-            decision = decide(text, extraction)  # rule bugs stay loud (500), not hidden as needs_human
+            try:
+                decision = decide(text, extraction)
+            except Exception as e:  # a rules bug: keep the letter on record for a human, then stay loud (500)
+                crash, error = e, f"{type(e).__name__}: {e}"
+                decision = extraction_failed(error, rule="RULES_FAILED")
+        # OPEN: a repeated letter is not detected and gets a second decision (NOTES.md, open decision 7).
         row = self._repository.add(DecisionRow(
             id=str(uuid.uuid4()), created_at=datetime.now(UTC), route=decision.route,
             primary_rule=decision.primary_rule,
@@ -36,6 +41,8 @@ class DecisionService:
             decision=decision.model_dump(mode="json"), model=self._extractor.model_name,
             prompt_version=PROMPT_VERSION, rules_version=decision.rules_version, error=error,
         ))
+        if crash:
+            raise crash
         return _to_response(row)
 
     def get(self, decision_id: str) -> DecisionResponse | None:

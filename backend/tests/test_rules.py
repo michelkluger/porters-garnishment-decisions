@@ -10,9 +10,9 @@ from app.decisions.schema import (
 )
 
 SAMPLES = Path(__file__).parents[2] / "samples"
-LETTER_1 = (SAMPLES / "01-order.auto.txt").read_text()
-LETTER_2 = (SAMPLES / "02-vague-follow-up.needs_human.txt").read_text()
-LETTER_3 = (SAMPLES / "03-restriction.auto.txt").read_text()
+LETTER_1 = (SAMPLES / "01-order.auto.txt").read_text(encoding="utf-8")
+LETTER_2 = (SAMPLES / "02-vague-follow-up.needs_human.txt").read_text(encoding="utf-8")
+LETTER_3 = (SAMPLES / "03-restriction.auto.txt").read_text(encoding="utf-8")
 E, ABSENT = Status.EXPLICIT, Status.ABSENT
 
 
@@ -104,7 +104,11 @@ SUPERSEDED_1267 = Candidate(value="1267.00", source_quote="Restricted amount to 
     # unsure which figure applies
     (ex3(amount=amount("1267.00", "Restricted amount to seize: EUR 1,267.00", status=Status.AMBIGUOUS,
                        candidates=ex3().amount.other_candidates)), "AMOUNT_UNCERTAIN"),
-], ids=["took-original-amount", "ignored-other-figure", "unsure-which"])
+    # took the original figure and invented a higher rival so it looks like a reduction
+    (ex3(amount=amount("4250.00", "in the amount of EUR 4,250.00", candidates=[
+        SUPERSEDED_1267, Candidate(value="9000.00", source_quote="EUR 9,000.00", role="invented")])),
+     "RESTRICTION_NOT_REDUCING"),
+], ids=["took-original-amount", "ignored-other-figure", "unsure-which", "invented-higher-rival"])
 def test_sample_3_misreadings_need_human(extraction, rule):
     d = decide(LETTER_3, extraction)
     assert d.route is Route.NEEDS_HUMAN and rule in fired(d)
@@ -135,8 +139,17 @@ def test_sample_3_misreadings_need_human(extraction, rule):
                                                                           role="co-debtor?")])),
      "DEBTOR_NAME_HAS_ALTERNATIVES"),
     (LETTER_1, ex1(document_type_quote="Notice of Hearing"), "DOCUMENT_TYPE_NOT_IN_LETTER"),
+    (LETTER_1, ex1(document_type_quote=" "), "DOCUMENT_TYPE_NOT_IN_LETTER"),
+    # values must match their quote whole and as written: a cut-off or re-cased reference is a misread
+    (LETTER_1, ex1(case_reference=f("AB-1042/2", "Case reference: AB-1042/24")), "CASE_REFERENCE_VALUE_NOT_IN_QUOTE"),
+    (LETTER_1, ex1(case_reference=f("ab-1042/24")), "CASE_REFERENCE_NOT_IN_LETTER"),
+    (LETTER_1.replace("Jordan A. Meyer", "Mr. Meyer"), ex1(debtor_name=f("Mr. Meyer")), "DEBTOR_NAME_PARTIAL"),
+    (LETTER_1, ex1(amount=amount("NaN", "Amount to seize: EUR 4,250.00")), "AMOUNT_UNPARSEABLE"),
+    (LETTER_1.replace("Amount to seize: EUR", "Amount (EUR):"), ex1(amount=no_amount()), "AMOUNT_MISSED"),
 ], ids=["initial-only-name", "prose-amount", "hallucinated-quote", "misread-amount", "misread-iban",
-        "missed-amount", "missed-case-ref", "misread-case-ref", "two-debtors", "doc-type-not-in-letter"])
+        "missed-amount", "missed-case-ref", "misread-case-ref", "two-debtors", "doc-type-not-in-letter",
+        "blank-doc-type-quote", "cut-off-case-ref", "re-cased-case-ref", "title-and-surname", "nan-amount",
+        "missed-amount-eur-label"])
 def test_uncertainty_routes_to_human(text, extraction, rule):
     d = decide(text, extraction)
     assert d.route is Route.NEEDS_HUMAN and rule in fired(d), d.reasons
@@ -171,7 +184,13 @@ BAD_IBAN_LETTER = LETTER_1.replace("3249 31", "3249 32")
     (LETTER_1, ex1(amount=amount("4250.00", "Amount to seize: EUR 4,250.00", currency="USD")), "AMOUNT_NOT_EUR"),
     (LETTER_1, ex1(account_iban=none()), "ACCOUNT_IBAN_MISSING"),
     (LETTER_1, ex1(debtor_name=none()), "DEBTOR_NAME_MISSING"),
-], ids=["iban-checksum", "not-eur", "no-iban", "no-debtor"])
+    # the model says EUR, the letter says USD
+    (LETTER_1.replace("EUR 4,250.00", "USD 4,250.00"), ex1(amount=amount("4250.00", "Amount to seize: USD 4,250.00")),
+     "AMOUNT_NOT_EUR"),
+    # the model calls a real order "not a garnishment": its word alone must not reject it
+    (LETTER_1, ex1(document_type=DocumentType.OTHER, document_type_quote="DISTRICT COURT"),
+     "NOT_A_GARNISHMENT_UNCONFIRMED"),
+], ids=["iban-checksum", "not-eur", "no-iban", "no-debtor", "letter-says-usd", "order-called-other"])
 def test_soft_failures_need_human_not_reject(text, extraction, rule):
     d = decide(text, extraction)
     assert (d.route, d.primary_rule) == (Route.NEEDS_HUMAN, rule), d.reasons

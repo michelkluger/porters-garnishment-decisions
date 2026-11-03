@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("PORTERS_LLM_TESTS") != "1", reas
 
 @pytest.mark.parametrize("path", SAMPLES, ids=[p.stem for p in SAMPLES])
 def test_sample_routes_as_labelled(path):
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     extraction = asyncio.run(LLMExtractor(Settings.from_env().llm_model).extract(text))
     decision = decide(text, extraction)
     assert decision.route == path.stem.rsplit(".", 1)[1], decision.reasons

@@ -12,7 +12,7 @@ from .schema import (
     Confidence, Decision, DocumentType, ExtractedField, Extraction, FieldEvidence, Route, RuleResult, Status,
 )
 
-RULES_VERSION = "1"
+RULES_VERSION = "2"
 
 NH, REJECT = Route.NEEDS_HUMAN, Route.REJECT
 _SEVERITY = {Route.AUTO: 0, Route.NEEDS_HUMAN: 1, Route.REJECT: 2}
@@ -21,25 +21,35 @@ _UNCERTAIN = {Status.APPROXIMATE, Status.PARTIAL, Status.AMBIGUOUS}
 # shortcut: English number format only ("4,250.00"); "4.250,00" fails the value-vs-quote check
 # and goes to a human. Upgrade when letters arrive in other locales.
 _FIGURE = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-_EUR_AMOUNT = re.compile(rf"(?:EUR|€)\s*({_FIGURE})|({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.I)
+_EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.I)
 _HEDGE = re.compile(r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b", re.I)
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
 _INITIAL = re.compile(r"[^\W\d_]\.?")
+_TITLE = re.compile(r"(?:mr|mrs|ms|miss|dr|herr|frau)\.?\s+", re.I)
 
 
 def _norm(s: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", s).split()).casefold()
+    return " ".join(unicodedata.normalize("NFKC", s).split())
 
 
 def _in(fragment: str | None, text: str) -> bool:
-    return bool(fragment) and _norm(fragment) in _norm(text)
+    """Is the fragment in the text, ignoring spacing (not case). Used to check that a quote is really in the letter."""
+    fragment = _norm(fragment or "")
+    return bool(fragment) and fragment in _norm(text)
+
+
+def _verbatim(value: str | None, text: str | None) -> bool:
+    """Is the value in the text exactly as written and whole: "AB-1042/2" is not in "AB-1042/24"."""
+    value = _norm(value or "")
+    return bool(value) and re.search(rf"(?<![\w/-]){re.escape(value)}(?![\w/-])", _norm(text or "")) is not None
 
 
 def _dec(s: str) -> Decimal | None:
     try:
-        return Decimal(s.replace(",", "").strip())
+        d = Decimal(s.replace(",", "").strip())
     except InvalidOperation:
         return None
+    return d if d.is_finite() else None  # "NaN" and "Infinity" parse, but crash comparisons
 
 
 def _figures(s: str) -> set[Decimal]:
@@ -94,14 +104,14 @@ def _debtor_name(f: ExtractedField, text: str) -> list[RuleResult]:
         # OPEN: the spec lists no-amount and bad case reference as rejects, not a missing name.
         # Sent to a human until that is agreed.
         return [_rule("DEBTOR_NAME_MISSING", name, True, NH, "no debtor name in the letter", "")]
-    tokens = f.value.split()
+    tokens = _TITLE.sub("", f.value.strip(), count=1).split()  # "Mr. Meyer" has no first name
     partial = len(tokens) < 2 or bool(_INITIAL.fullmatch(tokens[0]))
     return [
         *_common(name, f, text),
-        _rule("DEBTOR_NAME_VALUE_NOT_IN_QUOTE", name, not _in(f.value, f.source_quote or ""), NH,
+        _rule("DEBTOR_NAME_VALUE_NOT_IN_QUOTE", name, not _verbatim(f.value, f.source_quote), NH,
               f"{f.value!r} is not what the quote says", "value matches its quote"),
         _rule("DEBTOR_NAME_PARTIAL", name, partial, NH,
-              f"{f.value!r} is not a full name (single word or initial only)", "full name"),
+              f"{f.value!r} is not a full name (single word, initial or title only)", "full name"),
         _single_value(name, f),
     ]
 
@@ -117,10 +127,10 @@ def _case_reference(f: ExtractedField, text: str) -> list[RuleResult]:
     malformed = not _CASE_REF.fullmatch(f.value.strip())
     return [
         *_common(name, f, text),
-        _rule("CASE_REFERENCE_VALUE_NOT_IN_QUOTE", name, not _in(f.value, f.source_quote or ""), NH,
+        _rule("CASE_REFERENCE_VALUE_NOT_IN_QUOTE", name, not _verbatim(f.value, f.source_quote), NH,
               f"{f.value!r} is not what the quote says", "value matches its quote"),
-        # Reject only when the malformed value is really printed in the letter, not a misread.
-        _rule("CASE_REFERENCE_MALFORMED", name, malformed and _in(f.value, text), REJECT,
+        # Reject only when the malformed value is printed in the letter exactly as given, not a misread.
+        _rule("CASE_REFERENCE_MALFORMED", name, malformed and _verbatim(f.value, text), REJECT,
               f"{f.value!r} is not in the format XX-0000/00", "format XX-0000/00"),
         _single_value(name, f),
     ]
@@ -159,8 +169,10 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     quote = f.source_quote or ""
     in_quote = _figures(quote)
     grounded = _in(quote, text) and value in in_quote
-    others = {d for c in ex.amount.other_candidates if (d := _dec(c.value)) is not None}
+    # only rivals printed in the letter count: an invented higher figure must not make a restriction look reducing
+    others = {d for c in ex.amount.other_candidates if (d := _dec(c.value)) is not None} & in_letter
     unexplained = in_letter - {value} - others
+    eur = (f.currency or "").strip().upper() in {"EUR", "€"} and value in in_letter
     is_restriction = ex.document_type is DocumentType.RESTRICTION
     reduces = any(o > value for o in others)
     return [
@@ -171,8 +183,10 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
               f"{f.value} is not the figure in {quote!r}", "value matches its quote"),
         _rule("AMOUNT_HEDGED", name, bool(_HEDGE.search(quote)), NH,
               f"amount is hedged: {quote!r}", "no hedging words"),
-        _rule("AMOUNT_NOT_EUR", name, (f.currency or "").strip().upper() not in {"EUR", "€"}, NH,
-              f"currency is {f.currency!r}, not EUR", "currency EUR"),
+        # the model's currency alone is not enough: the figure must be printed as EUR in the letter
+        _rule("AMOUNT_NOT_EUR", name, not eur, NH,
+              f"not shown as EUR: model said {f.currency!r}, the letter's EUR figures are "
+              f"{sorted(map(str, in_letter))}", "currency EUR, printed as EUR in the letter"),
         # Reject only a non-positive amount that is really printed in the letter.
         _rule("AMOUNT_NOT_POSITIVE", name, value <= 0 and grounded, REJECT,
               f"amount {value} is not positive", "amount is positive"),
@@ -187,11 +201,17 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
 
 def _document(ex: Extraction, text: str) -> list[RuleResult]:
     grounded = _in(ex.document_type_quote, text)
+    other = ex.document_type is DocumentType.OTHER and grounded
+    # The type is the model's judgement, so it alone must not reject a letter that names an EUR sum.
+    eur = sorted(map(str, _eur_amounts(text)))
     return [
         _rule("DOCUMENT_TYPE_NOT_IN_LETTER", None, not grounded, NH,
               f"quote {ex.document_type_quote!r} does not appear in the letter", "document type quote found"),
-        _rule("NOT_A_GARNISHMENT", None, ex.document_type is DocumentType.OTHER and grounded, REJECT,
+        _rule("NOT_A_GARNISHMENT", None, other and not eur, REJECT,
               f"not a seizure order: {ex.document_type_quote!r}", f"document is a {ex.document_type}"),
+        _rule("NOT_A_GARNISHMENT_UNCONFIRMED", None, other and bool(eur), NH,
+              f"model says not a seizure order, but the letter cites EUR {eur}",
+              "no conflict between document type and letter"),
     ]
 
 
@@ -232,8 +252,8 @@ def decide(text: str, ex: Extraction) -> Decision:
     return _verdict(_document(ex, text), fields)
 
 
-def extraction_failed(error: str) -> Decision:
-    """No usable extraction (model down, refusal, invalid output): a human reads the letter."""
-    rule = RuleResult(rule="EXTRACTION_FAILED", field=None, fired=True, route=NH, detail=error)
-    return Decision(route=NH, primary_rule=rule.rule, reasons=[f"{rule.rule}: {error}"], fields={},
-                    document_rules=[rule], rules_version=RULES_VERSION)
+def extraction_failed(error: str, rule: str = "EXTRACTION_FAILED") -> Decision:
+    """No usable extraction (model down, refusal, invalid output) or a crash in the rules: a human reads the letter."""
+    result = RuleResult(rule=rule, field=None, fired=True, route=NH, detail=error)
+    return Decision(route=NH, primary_rule=rule, reasons=[f"{rule}: {error}"], fields={},
+                    document_rules=[result], rules_version=RULES_VERSION)

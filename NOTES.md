@@ -18,6 +18,10 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
    every call.
 6. **Brand.** Roobert (their typeface) is licensed, so it is listed but not bundled; the logo is a text
    wordmark; the amber and red route colours are not from their palette. All three need Porters' input.
+7. **Duplicate letters.** Not detected today: the same letter posted twice gives two decisions, possibly two
+   `auto`. Courts resend letters, so this matters before execution exists. Options: route a repeat to
+   `needs_human` (`DUPLICATE_LETTER`), or return the first decision. What counts as "the same" (exact text, same
+   case reference + amount) is the open part.
 
 ## Next steps
 
@@ -38,7 +42,7 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 - **Overconfident wrong extraction that passes every check.** A grounded, well-formed, wrong value, e.g. the
   wrong one of two names that are both in the letter. The candidates list and self-consistency narrow this;
   only labelled data measures it.
-- **Grounding is substring matching.** Robust to whitespace and case, not to OCR noise or reformatting. Fine
+- **Grounding is substring matching.** Robust to whitespace, not to case, OCR noise or reformatting. Fine
   for `.txt`, insufficient once scans arrive.
 - **Number formats.** Only `4,250.00` style is parsed. A European `4.250,00` fails the value-vs-quote check
   and goes to a human (safe, but noisy). Marked `shortcut:` in `rules.py`.
