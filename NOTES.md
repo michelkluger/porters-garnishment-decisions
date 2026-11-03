@@ -22,6 +22,11 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
    `auto`. Courts resend letters, so this matters before execution exists. Options: route a repeat to
    `needs_human` (`DUPLICATE_LETTER`), or return the first decision. What counts as "the same" (exact text, same
    case reference + amount) is the open part.
+8. **Copyright header.** Ruff runs with every rule except `CPY001` (copyright notice in each file), because
+   who holds the copyright and under which licence is not decided. Pick both, then drop it from `ignore`.
+9. **Docstrings on the LLM contract.** The six classes the model fills in (`Status` … `Extraction` in
+   `schema.py`) carry `noqa: D101`: Pydantic sends class docstrings to the model as schema descriptions, so
+   adding them changes the prompt. Add them with a `PROMPT_VERSION` bump and a paid `test_samples_llm` run.
 
 ## Next steps
 

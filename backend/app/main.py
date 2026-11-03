@@ -24,6 +24,7 @@ def _default_extractor(settings: Settings) -> Extractor:
 
 
 def create_app(extractor: Extractor | None = None, db_url: str | None = None) -> FastAPI:
+    """Build the app; tests pass their own extractor and database."""
     settings = Settings.from_env()
     app = FastAPI(title="Porters garnishment decisions")
     app.state.engine = create_db_engine(db_url or settings.database_url)

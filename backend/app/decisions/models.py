@@ -10,6 +10,8 @@ from app.core.database import Base
 
 
 class DecisionRow(Base):
+    """One decision: the letter, what the model read, what the rules decided and why."""
+
     __tablename__ = "decisions"
 
     id: Mapped[str] = mapped_column(primary_key=True)

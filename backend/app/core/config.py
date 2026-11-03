@@ -10,13 +10,16 @@ RECORDINGS = Path(__file__).parents[2] / "recordings" / "haiku-subagent.json"
 
 @dataclass(frozen=True)
 class Settings:
+    """Runtime settings, read once at startup."""
+
     llm_model: str
     database_url: str
     extractor: str  # "llm" (live model calls) or "recorded" (replay recorded extractions)
     recordings_path: Path
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
+        """Read the settings from the environment, with defaults for local runs."""
         # shortcut: only the Anthropic key is checked; set PORTERS_EXTRACTOR=llm when using another provider.
         default_extractor = "llm" if os.environ.get("ANTHROPIC_API_KEY") else "recorded"
         return cls(

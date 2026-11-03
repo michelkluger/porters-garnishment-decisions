@@ -9,7 +9,15 @@ import unicodedata
 from decimal import Decimal, InvalidOperation
 
 from .schema import (
-    Confidence, Decision, DocumentType, ExtractedField, Extraction, FieldEvidence, Route, RuleResult, Status,
+    Confidence,
+    Decision,
+    DocumentType,
+    ExtractedField,
+    Extraction,
+    FieldEvidence,
+    Route,
+    RuleResult,
+    Status,
 )
 
 RULES_VERSION = "2"
@@ -21,11 +29,12 @@ _UNCERTAIN = {Status.APPROXIMATE, Status.PARTIAL, Status.AMBIGUOUS}
 # shortcut: English number format only ("4,250.00"); "4.250,00" fails the value-vs-quote check
 # and goes to a human. Upgrade when letters arrive in other locales.
 _FIGURE = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-_EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.I)
-_HEDGE = re.compile(r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b", re.I)
+_EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE)
+_HEDGE = re.compile(r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b", re.IGNORECASE)
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
 _INITIAL = re.compile(r"[^\W\d_]\.?")
-_TITLE = re.compile(r"(?:mr|mrs|ms|miss|dr|herr|frau)\.?\s+", re.I)
+_TITLE = re.compile(r"(?:mr|mrs|ms|miss|dr|herr|frau)\.?\s+", re.IGNORECASE)
+_FULL_NAME_WORDS = 2  # a first name and a surname
 
 
 def _norm(s: str) -> str:
@@ -72,82 +81,131 @@ def _iban_valid(value: str) -> bool:
     return int("".join(str(int(c, 36)) for c in s[4:] + s[:4])) % 97 == 1
 
 
-def _rule(rule: str, field: str | None, fired: bool, route: Route, if_fired: str, if_not: str) -> RuleResult:
-    return RuleResult(rule=rule, field=field, fired=fired, route=route, detail=if_fired if fired else if_not)
+def _rule(rule: str, field: str | None, route: Route, *, fired: bool, detail: tuple[str, str]) -> RuleResult:
+    """Record one rule; `detail` is (the text if it fired, the text if it did not)."""
+    return RuleResult(rule=rule, field=field, fired=fired, route=route, detail=detail[0] if fired else detail[1])
 
 
-def _present(f: ExtractedField) -> bool:
-    return f.status is not Status.ABSENT and bool(f.value and f.value.strip())
+def _present(f: ExtractedField) -> str | None:
+    """Return the field's value, or None if the model found nothing usable."""
+    return f.value if f.status is not Status.ABSENT and f.value and f.value.strip() else None
 
 
 def _common(name: str, f: ExtractedField, text: str) -> list[RuleResult]:
     """Rules every present field must pass: its quote is really in the letter and the model was sure."""
     tag = name.upper()
     return [
-        _rule(f"{tag}_NOT_IN_LETTER", name, not _in(f.source_quote, text), NH,
-              f"quote {f.source_quote!r} does not appear in the letter", "quote found in the letter"),
-        _rule(f"{tag}_UNCERTAIN", name, f.status in _UNCERTAIN, NH,
-              f"model marked it {f.status}", "model marked it explicit"),
+        _rule(
+            f"{tag}_NOT_IN_LETTER",
+            name,
+            NH,
+            fired=not _in(f.source_quote, text),
+            detail=(f"quote {f.source_quote!r} does not appear in the letter", "quote found in the letter"),
+        ),
+        _rule(
+            f"{tag}_UNCERTAIN",
+            name,
+            NH,
+            fired=f.status in _UNCERTAIN,
+            detail=(f"model marked it {f.status}", "model marked it explicit"),
+        ),
     ]
 
 
 def _single_value(name: str, f: ExtractedField) -> RuleResult:
     """Name, case reference and IBAN have exactly one right answer; any rival means ambiguity."""
     rivals = [c.value for c in f.other_candidates]
-    return _rule(f"{name.upper()}_HAS_ALTERNATIVES", name, bool(rivals), NH,
-                 f"other possible values in the letter: {rivals}", "no other possible values")
+    return _rule(
+        f"{name.upper()}_HAS_ALTERNATIVES",
+        name,
+        NH,
+        fired=bool(rivals),
+        detail=(f"other possible values in the letter: {rivals}", "no other possible values"),
+    )
 
 
 def _debtor_name(f: ExtractedField, text: str) -> list[RuleResult]:
     name = "debtor_name"
-    if not _present(f):
+    if (value := _present(f)) is None:
         # OPEN: the spec lists no-amount and bad case reference as rejects, not a missing name.
         # Sent to a human until that is agreed.
-        return [_rule("DEBTOR_NAME_MISSING", name, True, NH, "no debtor name in the letter", "")]
-    tokens = _TITLE.sub("", f.value.strip(), count=1).split()  # "Mr. Meyer" has no first name
-    partial = len(tokens) < 2 or bool(_INITIAL.fullmatch(tokens[0]))
+        return [_rule("DEBTOR_NAME_MISSING", name, NH, fired=True, detail=("no debtor name in the letter", ""))]
+    tokens = _TITLE.sub("", value.strip(), count=1).split()  # "Mr. Meyer" has no first name
+    partial = len(tokens) < _FULL_NAME_WORDS or bool(_INITIAL.fullmatch(tokens[0]))
     return [
         *_common(name, f, text),
-        _rule("DEBTOR_NAME_VALUE_NOT_IN_QUOTE", name, not _verbatim(f.value, f.source_quote), NH,
-              f"{f.value!r} is not what the quote says", "value matches its quote"),
-        _rule("DEBTOR_NAME_PARTIAL", name, partial, NH,
-              f"{f.value!r} is not a full name (single word, initial or title only)", "full name"),
+        _rule(
+            "DEBTOR_NAME_VALUE_NOT_IN_QUOTE",
+            name,
+            NH,
+            fired=not _verbatim(value, f.source_quote),
+            detail=(f"{value!r} is not what the quote says", "value matches its quote"),
+        ),
+        _rule(
+            "DEBTOR_NAME_PARTIAL",
+            name,
+            NH,
+            fired=partial,
+            detail=(f"{value!r} is not a full name (single word, initial or title only)", "full name"),
+        ),
         _single_value(name, f),
     ]
 
 
 def _case_reference(f: ExtractedField, text: str) -> list[RuleResult]:
     name = "case_reference"
-    if not _present(f):
+    if (value := _present(f)) is None:
         in_text = _CASE_REF.findall(text)
         if in_text:
-            return [_rule("CASE_REFERENCE_MISSED", name, True, NH,
-                          f"model found none, but the letter contains {in_text}", "")]
-        return [_rule("CASE_REFERENCE_MISSING", name, True, REJECT, "no case reference in the letter", "")]
-    malformed = not _CASE_REF.fullmatch(f.value.strip())
+            missed = f"model found none, but the letter contains {in_text}"
+            return [_rule("CASE_REFERENCE_MISSED", name, NH, fired=True, detail=(missed, ""))]
+        return [
+            _rule("CASE_REFERENCE_MISSING", name, REJECT, fired=True, detail=("no case reference in the letter", ""))
+        ]
+    malformed = not _CASE_REF.fullmatch(value.strip())
     return [
         *_common(name, f, text),
-        _rule("CASE_REFERENCE_VALUE_NOT_IN_QUOTE", name, not _verbatim(f.value, f.source_quote), NH,
-              f"{f.value!r} is not what the quote says", "value matches its quote"),
+        _rule(
+            "CASE_REFERENCE_VALUE_NOT_IN_QUOTE",
+            name,
+            NH,
+            fired=not _verbatim(value, f.source_quote),
+            detail=(f"{value!r} is not what the quote says", "value matches its quote"),
+        ),
         # Reject only when the malformed value is printed in the letter exactly as given, not a misread.
-        _rule("CASE_REFERENCE_MALFORMED", name, malformed and _verbatim(f.value, text), REJECT,
-              f"{f.value!r} is not in the format XX-0000/00", "format XX-0000/00"),
+        _rule(
+            "CASE_REFERENCE_MALFORMED",
+            name,
+            REJECT,
+            fired=malformed and _verbatim(value, text),
+            detail=(f"{value!r} is not in the format XX-0000/00", "format XX-0000/00"),
+        ),
         _single_value(name, f),
     ]
 
 
 def _account_iban(f: ExtractedField, text: str) -> list[RuleResult]:
     name = "account_iban"
-    if not _present(f):
+    if (value := _present(f)) is None:
         # OPEN: the spec only says a missing IBAN must not force a reject. Without it the bank must
         # match the debtor to an account by name, so it goes to a human until agreed otherwise.
-        return [_rule("ACCOUNT_IBAN_MISSING", name, True, NH, "no IBAN in the letter", "")]
+        return [_rule("ACCOUNT_IBAN_MISSING", name, NH, fired=True, detail=("no IBAN in the letter", ""))]
     return [
         *_common(name, f, text),
-        _rule("ACCOUNT_IBAN_VALUE_NOT_IN_QUOTE", name, _compact(f.value) not in _compact(f.source_quote or ""), NH,
-              f"{f.value!r} is not what the quote says", "value matches its quote"),
-        _rule("ACCOUNT_IBAN_INVALID", name, not _iban_valid(f.value), NH,
-              f"{f.value!r} fails the IBAN format or checksum", "IBAN checksum valid"),
+        _rule(
+            "ACCOUNT_IBAN_VALUE_NOT_IN_QUOTE",
+            name,
+            NH,
+            fired=_compact(value) not in _compact(f.source_quote or ""),
+            detail=(f"{value!r} is not what the quote says", "value matches its quote"),
+        ),
+        _rule(
+            "ACCOUNT_IBAN_INVALID",
+            name,
+            NH,
+            fired=not _iban_valid(value),
+            detail=(f"{value!r} fails the IBAN format or checksum", "IBAN checksum valid"),
+        ),
         _single_value(name, f),
     ]
 
@@ -155,16 +213,19 @@ def _account_iban(f: ExtractedField, text: str) -> list[RuleResult]:
 def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     name, f = "amount", ex.amount
     in_letter = _eur_amounts(text)
-    if not _present(f):
+    shown = sorted(map(str, in_letter))
+    if (raw := _present(f)) is None:
         if in_letter:
-            return [_rule("AMOUNT_MISSED", name, True, NH,
-                          f"model found none, but the letter contains EUR {sorted(map(str, in_letter))}", "")]
-        return [_rule("AMOUNT_MISSING", name, True, REJECT, "no amount in the letter", "")]
+            missed = f"model found none, but the letter contains EUR {shown}"
+            return [_rule("AMOUNT_MISSED", name, NH, fired=True, detail=(missed, ""))]
+        return [_rule("AMOUNT_MISSING", name, REJECT, fired=True, detail=("no amount in the letter", ""))]
 
-    value = _dec(f.value)
+    value = _dec(raw)
     if value is None:
-        return [*_common(name, f, text),
-                _rule("AMOUNT_UNPARSEABLE", name, True, NH, f"{f.value!r} is not a number", "")]
+        return [
+            *_common(name, f, text),
+            _rule("AMOUNT_UNPARSEABLE", name, NH, fired=True, detail=(f"{raw!r} is not a number", "")),
+        ]
 
     quote = f.source_quote or ""
     in_quote = _figures(quote)
@@ -177,25 +238,66 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     reduces = any(o > value for o in others)
     return [
         *_common(name, f, text),
-        _rule("AMOUNT_NOT_A_FIGURE", name, not in_quote, NH,
-              f"amount is only described in words: {quote!r}", "stated as a figure"),
-        _rule("AMOUNT_VALUE_NOT_IN_QUOTE", name, bool(in_quote) and value not in in_quote, NH,
-              f"{f.value} is not the figure in {quote!r}", "value matches its quote"),
-        _rule("AMOUNT_HEDGED", name, bool(_HEDGE.search(quote)), NH,
-              f"amount is hedged: {quote!r}", "no hedging words"),
+        _rule(
+            "AMOUNT_NOT_A_FIGURE",
+            name,
+            NH,
+            fired=not in_quote,
+            detail=(f"amount is only described in words: {quote!r}", "stated as a figure"),
+        ),
+        _rule(
+            "AMOUNT_VALUE_NOT_IN_QUOTE",
+            name,
+            NH,
+            fired=bool(in_quote) and value not in in_quote,
+            detail=(f"{raw} is not the figure in {quote!r}", "value matches its quote"),
+        ),
+        _rule(
+            "AMOUNT_HEDGED",
+            name,
+            NH,
+            fired=bool(_HEDGE.search(quote)),
+            detail=(f"amount is hedged: {quote!r}", "no hedging words"),
+        ),
         # the figure must also be printed as EUR in the letter, whatever currency the model reports
-        _rule("AMOUNT_NOT_EUR", name, not eur, NH,
-              f"not shown as EUR: model said {f.currency!r}, the letter's EUR figures are "
-              f"{sorted(map(str, in_letter))}", "currency EUR, printed as EUR in the letter"),
+        _rule(
+            "AMOUNT_NOT_EUR",
+            name,
+            NH,
+            fired=not eur,
+            detail=(
+                f"not shown as EUR: model said {f.currency!r}, the letter's EUR figures are {shown}",
+                "currency EUR, printed as EUR in the letter",
+            ),
+        ),
         # Reject only a non-positive amount that is really printed in the letter.
-        _rule("AMOUNT_NOT_POSITIVE", name, value <= 0 and grounded, REJECT,
-              f"amount {value} is not positive", "amount is positive"),
-        _rule("AMOUNT_UNEXPLAINED_FIGURES", name, bool(unexplained), NH,
-              f"the letter also cites EUR {sorted(map(str, unexplained))}, not accounted for",
-              "every EUR figure in the letter is accounted for"),
-        _rule("RESTRICTION_NOT_REDUCING", name, is_restriction and not reduces, NH,
-              f"a restriction must lower an earlier amount, but {value} is not below any cited figure",
-              "restriction lowers the earlier amount" if is_restriction else "not a restriction"),
+        _rule(
+            "AMOUNT_NOT_POSITIVE",
+            name,
+            REJECT,
+            fired=value <= 0 and grounded,
+            detail=(f"amount {value} is not positive", "amount is positive"),
+        ),
+        _rule(
+            "AMOUNT_UNEXPLAINED_FIGURES",
+            name,
+            NH,
+            fired=bool(unexplained),
+            detail=(
+                f"the letter also cites EUR {sorted(map(str, unexplained))}, not accounted for",
+                "every EUR figure in the letter is accounted for",
+            ),
+        ),
+        _rule(
+            "RESTRICTION_NOT_REDUCING",
+            name,
+            NH,
+            fired=is_restriction and not reduces,
+            detail=(
+                f"a restriction must lower an earlier amount, but {value} is not below any cited figure",
+                "restriction lowers the earlier amount" if is_restriction else "not a restriction",
+            ),
+        ),
     ]
 
 
@@ -205,19 +307,36 @@ def _document(ex: Extraction, text: str) -> list[RuleResult]:
     # The type is the model's judgement, so it alone must not reject a letter that names an EUR sum.
     eur = sorted(map(str, _eur_amounts(text)))
     return [
-        _rule("DOCUMENT_TYPE_NOT_IN_LETTER", None, not grounded, NH,
-              f"quote {ex.document_type_quote!r} does not appear in the letter", "document type quote found"),
-        _rule("NOT_A_GARNISHMENT", None, other and not eur, REJECT,
-              f"not a seizure order: {ex.document_type_quote!r}", f"document is a {ex.document_type}"),
-        _rule("NOT_A_GARNISHMENT_UNCONFIRMED", None, other and bool(eur), NH,
-              f"model says not a seizure order, but the letter cites EUR {eur}",
-              "no conflict between document type and letter"),
+        _rule(
+            "DOCUMENT_TYPE_NOT_IN_LETTER",
+            None,
+            NH,
+            fired=not grounded,
+            detail=(f"quote {ex.document_type_quote!r} does not appear in the letter", "document type quote found"),
+        ),
+        _rule(
+            "NOT_A_GARNISHMENT",
+            None,
+            REJECT,
+            fired=other and not eur,
+            detail=(f"not a seizure order: {ex.document_type_quote!r}", f"document is a {ex.document_type}"),
+        ),
+        _rule(
+            "NOT_A_GARNISHMENT_UNCONFIRMED",
+            None,
+            NH,
+            fired=other and bool(eur),
+            detail=(
+                f"model says not a seizure order, but the letter cites EUR {eur}",
+                "no conflict between document type and letter",
+            ),
+        ),
     ]
 
 
 def _confidence(f: ExtractedField, rules: list[RuleResult]) -> Confidence:
     fired = [r for r in rules if r.fired]
-    if not _present(f):
+    if _present(f) is None:
         return Confidence.ABSENT
     if any(r.route is REJECT for r in fired):
         return Confidence.INVALID
@@ -238,6 +357,7 @@ def _verdict(document_rules: list[RuleResult], fields: dict[str, FieldEvidence])
 
 
 def decide(text: str, ex: Extraction) -> Decision:
+    """Route a letter from what the model read in it. Same input, same decision."""
     checks = {
         "debtor_name": (ex.debtor_name, _debtor_name(ex.debtor_name, text)),
         "amount": (ex.amount, _amount(ex, text)),
@@ -245,8 +365,9 @@ def decide(text: str, ex: Extraction) -> Decision:
         "account_iban": (ex.account_iban, _account_iban(ex.account_iban, text)),
     }
     fields = {
-        name: FieldEvidence(value=f.value, source_quote=f.source_quote, status=f.status,
-                            confidence=_confidence(f, rules), rules=rules)
+        name: FieldEvidence(
+            value=f.value, source_quote=f.source_quote, status=f.status, confidence=_confidence(f, rules), rules=rules
+        )
         for name, (f, rules) in checks.items()
     }
     return _verdict(_document(ex, text), fields)
@@ -255,5 +376,11 @@ def decide(text: str, ex: Extraction) -> Decision:
 def extraction_failed(error: str, rule: str = "EXTRACTION_FAILED") -> Decision:
     """No usable extraction (model down, refusal, invalid output) or a crash in the rules: a human reads the letter."""
     result = RuleResult(rule=rule, field=None, fired=True, route=NH, detail=error)
-    return Decision(route=NH, primary_rule=rule, reasons=[f"{rule}: {error}"], fields={},
-                    document_rules=[result], rules_version=RULES_VERSION)
+    return Decision(
+        route=NH,
+        primary_rule=rule,
+        reasons=[f"{rule}: {error}"],
+        fields={},
+        document_rules=[result],
+        rules_version=RULES_VERSION,
+    )

@@ -75,5 +75,8 @@ source quote, every rule evaluated (fired or not), the raw extraction and the mo
 cd backend
 uv run pytest                                           # rules, API, recorded Haiku readings; no key, ~5 s
 PORTERS_LLM_TESTS=1 uv run pytest tests/test_samples_llm.py  # real model over every labelled sample (costs money)
+uv run ruff check && uv run ruff format --check && uv run ty check  # lint (all ruff rules), format, types
 cd ../frontend && bun run typecheck
 ```
+
+CI (`.github/workflows/ci.yml`) runs ruff, ty and pytest on every pull request and every push to `main`.

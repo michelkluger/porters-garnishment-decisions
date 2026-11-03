@@ -10,11 +10,13 @@ router = APIRouter(prefix="/decisions", tags=["decisions"])
 
 @router.post("", status_code=201)
 async def create_decision(body: DecisionRequest, service: DecisionServiceDep) -> DecisionResponse:
+    """Read a court letter, route it and record the decision with its evidence."""
     return await service.create(body.text)
 
 
 @router.get("/{decision_id}")
 def read_decision(decision_id: str, service: DecisionServiceDep) -> DecisionResponse:
+    """Return a recorded decision with the evidence that produced it."""
     decision = service.get(decision_id)
     if decision is None:
         raise HTTPException(404, "decision not found")

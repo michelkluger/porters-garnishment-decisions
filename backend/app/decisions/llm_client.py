@@ -1,12 +1,14 @@
 """LLM adapter: the only module that talks to a model. It reports what the letter says, never what to do."""
 
 import json
-from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic_ai import Agent, NativeOutput
 
 from .schema import Extraction
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 PROMPT_VERSION = "2026-11-03.1"
 
@@ -46,18 +48,26 @@ Fields:
 
 
 class Extractor(Protocol):
+    """Anything that reads a letter into an Extraction: the live model or recorded readings."""
+
     model_name: str
 
-    async def extract(self, text: str) -> Extraction: ...
+    async def extract(self, text: str) -> Extraction:
+        """Report what the letter says."""
+        ...
 
 
 class LLMExtractor:
-    def __init__(self, model: str):
+    """Reads letters with a live model call."""
+
+    def __init__(self, model: str) -> None:
+        """Set up the agent for a Pydantic AI model string."""
         self.model_name = model
         # Missing credentials fail here, at startup; keyless runs use RecordedExtractor (demo mode).
         self._agent = Agent(model, output_type=NativeOutput(Extraction), instructions=PROMPT)
 
     async def extract(self, text: str) -> Extraction:
+        """Ask the model what the letter says."""
         result = await self._agent.run(f"<letter>\n{text}\n</letter>")
         return result.output
 
@@ -73,7 +83,8 @@ class RecordedExtractor:
     fails into needs_human. Live extraction (LLMExtractor) is used whenever an API key is set.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path) -> None:
+        """Load the recordings file."""
         data = json.loads(path.read_text(encoding="utf-8"))
         self.model_name = f"recorded:{data['model']}"
         self._by_letter = {
@@ -81,9 +92,9 @@ class RecordedExtractor:
         }
 
     async def extract(self, text: str) -> Extraction:
+        """Return the recorded reading of this letter; LookupError if it was never recorded."""
         try:
             return self._by_letter[_letter_key(text)]
         except KeyError:
-            raise LookupError(
-                "no recorded extraction for this letter; set ANTHROPIC_API_KEY for live extraction"
-            ) from None
+            msg = "no recorded extraction for this letter; set ANTHROPIC_API_KEY for live extraction"
+            raise LookupError(msg) from None

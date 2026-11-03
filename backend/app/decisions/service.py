@@ -3,56 +3,79 @@
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from .llm_client import PROMPT_VERSION, Extractor
 from .models import DecisionRow
-from .repository import DecisionRepository
 from .rules import decide, extraction_failed
-from .schema import DecisionResponse
+from .schema import Decision, DecisionResponse, Extraction
+
+if TYPE_CHECKING:
+    from .repository import DecisionRepository
 
 log = logging.getLogger(__name__)
 
 
 class DecisionService:
-    def __init__(self, extractor: Extractor, repository: DecisionRepository):
+    """Turns a letter into a recorded decision, and reads recorded decisions back."""
+
+    def __init__(self, extractor: Extractor, repository: DecisionRepository) -> None:
+        """Use this extractor to read letters and this repository to record decisions."""
         self._extractor = extractor
         self._repository = repository
 
     async def create(self, text: str) -> DecisionResponse:
-        extraction, error, crash = None, None, None
+        """Extract, decide and record. Every letter is recorded, even when the model or the rules fail."""
         try:
             extraction = await self._extractor.extract(text)
         except Exception as e:  # model down, refusal, bad output: never lose the letter, a human reads it
             log.exception("extraction failed")
             error = f"{type(e).__name__}: {e}"
-            decision = extraction_failed(error)
-        else:
-            try:
-                decision = decide(text, extraction)
-            except Exception as e:  # a rules bug: keep the letter on record for a human, then stay loud (500)
-                crash, error = e, f"{type(e).__name__}: {e}"
-                decision = extraction_failed(error, rule="RULES_FAILED")
-        # OPEN: a repeated letter is not detected and gets a second decision (NOTES.md, open decision 7).
-        row = self._repository.add(DecisionRow(
-            id=str(uuid.uuid4()), created_at=datetime.now(UTC), route=decision.route,
-            primary_rule=decision.primary_rule,
-            case_reference=extraction.case_reference.value if extraction else None,
-            letter_text=text, extraction=extraction.model_dump(mode="json") if extraction else None,
-            decision=decision.model_dump(mode="json"), model=self._extractor.model_name,
-            prompt_version=PROMPT_VERSION, rules_version=decision.rules_version, error=error,
-        ))
-        if crash:
-            raise crash
-        return _to_response(row)
+            return self._record(text, None, extraction_failed(error), error)
+        try:
+            decision = decide(text, extraction)
+        except Exception as e:  # a rules bug: keep the letter on record for a human, then stay loud (500)
+            error = f"{type(e).__name__}: {e}"
+            self._record(text, extraction, extraction_failed(error, rule="RULES_FAILED"), error)
+            raise
+        return self._record(text, extraction, decision, None)
 
     def get(self, decision_id: str) -> DecisionResponse | None:
+        """Return a recorded decision, or None if there is none with this id."""
         row = self._repository.get(decision_id)
         return _to_response(row) if row else None
+
+    def _record(
+        self, text: str, extraction: Extraction | None, decision: Decision, error: str | None
+    ) -> DecisionResponse:
+        # OPEN: a repeated letter is not detected and gets a second decision (NOTES.md, open decision 7).
+        row = self._repository.add(
+            DecisionRow(
+                id=str(uuid.uuid4()),
+                created_at=datetime.now(UTC),
+                route=decision.route,
+                primary_rule=decision.primary_rule,
+                case_reference=extraction.case_reference.value if extraction else None,
+                letter_text=text,
+                extraction=extraction.model_dump(mode="json") if extraction else None,
+                decision=decision.model_dump(mode="json"),
+                model=self._extractor.model_name,
+                prompt_version=PROMPT_VERSION,
+                rules_version=decision.rules_version,
+                error=error,
+            )
+        )
+        return _to_response(row)
 
 
 def _to_response(row: DecisionRow) -> DecisionResponse:
     return DecisionResponse(
-        **row.decision, id=row.id, letter_text=row.letter_text,
+        **row.decision,
+        id=row.id,
+        letter_text=row.letter_text,
         created_at=row.created_at.replace(tzinfo=UTC),  # stored as UTC; SQLite drops the tzinfo
-        extraction=row.extraction, model=row.model, prompt_version=row.prompt_version, error=row.error,
+        extraction=row.extraction,
+        model=row.model,
+        prompt_version=row.prompt_version,
+        error=row.error,
     )
