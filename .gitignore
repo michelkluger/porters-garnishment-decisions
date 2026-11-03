@@ -1,0 +1,14 @@
+# dependencies and build output
+.venv/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+
+# local data and secrets: never commit
+*.db
+.env
+.env.*
+
+# assignment brief from Porters: kept local, not published
+*.external*.md

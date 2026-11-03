@@ -1,0 +1,16 @@
+DISTRICT COURT OF EXAMPLETON
+Order of Attachment / Garnishment
+
+Case reference: JK-7781/26
+Date: 10 April 2026
+
+TO: Northbank AG, Account Services
+
+You are hereby ordered to attach and hold funds in the account of the debtor named
+below, up to the amount stated.
+
+Debtor:        Amara Okafor
+Account (IBAN): DE89 3704 0044 0532 0130 00
+Amount to seize: USD 1,900.00
+
+Registrar, District Court of Exampleton

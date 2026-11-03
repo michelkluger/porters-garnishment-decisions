@@ -1,0 +1,15 @@
+DISTRICT COURT OF EXAMPLETON
+Order of Attachment / Garnishment
+
+Date: 3 April 2026
+
+TO: Northbank AG, Account Services
+
+You are hereby ordered to attach and hold funds in the account of the debtor named
+below, up to the amount stated.
+
+Debtor:        Priya K. Raman
+Account (IBAN): DE89 3704 0044 0532 0130 00
+Amount to seize: EUR 2,980.50
+
+Registrar, District Court of Exampleton

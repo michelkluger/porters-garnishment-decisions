@@ -1,0 +1,203 @@
+"""The routing rules, fed hand-built extractions: no model involved, so every case is exact and repeatable."""
+
+from pathlib import Path
+
+import pytest
+
+from app.decisions.rules import decide, extraction_failed
+from app.decisions.schema import (
+    AmountField, Candidate, Confidence, DocumentType, ExtractedField, Extraction, Route, Status,
+)
+
+SAMPLES = Path(__file__).parents[2] / "samples"
+LETTER_1 = (SAMPLES / "01-order.auto.txt").read_text()
+LETTER_2 = (SAMPLES / "02-vague-follow-up.needs_human.txt").read_text()
+LETTER_3 = (SAMPLES / "03-restriction.auto.txt").read_text()
+E, ABSENT = Status.EXPLICIT, Status.ABSENT
+
+
+def f(value, quote=None, status=E, candidates=()):
+    return ExtractedField(value=value, source_quote=quote or value, status=status, other_candidates=list(candidates))
+
+
+def amount(value, quote, status=E, currency="EUR", candidates=()):
+    return AmountField(value=value, source_quote=quote, status=status, currency=currency,
+                       other_candidates=list(candidates))
+
+
+def none():
+    return ExtractedField(value=None, source_quote=None, status=ABSENT, other_candidates=[])
+
+
+def no_amount():
+    return AmountField(value=None, source_quote=None, status=ABSENT, currency=None, other_candidates=[])
+
+
+def ex1(**overrides):
+    """A correct reading of sample letter 1."""
+    base = dict(
+        document_type=DocumentType.ORDER, document_type_quote="Order of Attachment / Garnishment",
+        debtor_name=f("Jordan A. Meyer"),
+        amount=amount("4250.00", "Amount to seize: EUR 4,250.00"),
+        case_reference=f("AB-1042/24"),
+        account_iban=f("DE44 5001 0517 5407 3249 31"),
+    )
+    return Extraction(**base | overrides)
+
+
+def ex3(**overrides):
+    """A correct reading of sample letter 3: the restricted figure, with the original one as a candidate."""
+    original = Candidate(value="4250.00", source_quote="in the amount of EUR 4,250.00",
+                         role="amount of the original order, reduced by this restriction")
+    return ex1(**{
+        "document_type": DocumentType.RESTRICTION,
+        "document_type_quote": "Order Restricting a Prior Attachment / Garnishment",
+        "amount": amount("1267.00", "Restricted amount to seize: EUR 1,267.00", candidates=[original]),
+    } | overrides)
+
+
+def ex2():
+    """A faithful reading of sample letter 2."""
+    return ex1(
+        debtor_name=f("M. Meyer", "account holder M. Meyer", status=Status.PARTIAL),
+        amount=amount("4200.00", "in the region of four thousand two hundred euros", status=Status.APPROXIMATE),
+        account_iban=none(),
+    )
+
+
+def fired(decision):
+    rules = decision.document_rules + [r for fe in decision.fields.values() for r in fe.rules]
+    return {r.rule for r in rules if r.fired}
+
+
+# --- the three labelled samples ------------------------------------------------------------------
+
+def test_sample_1_clean_order_is_auto():
+    d = decide(LETTER_1, ex1())
+    assert (d.route, d.primary_rule, fired(d)) == (Route.AUTO, "ALL_CHECKS_PASSED", set())
+    assert {n: fe.confidence for n, fe in d.fields.items()} == dict.fromkeys(d.fields, Confidence.HIGH)
+
+
+def test_sample_2_vague_letter_needs_human_not_reject():
+    d = decide(LETTER_2, ex2())
+    assert d.route is Route.NEEDS_HUMAN
+    assert {"DEBTOR_NAME_PARTIAL", "AMOUNT_NOT_A_FIGURE", "AMOUNT_HEDGED", "ACCOUNT_IBAN_MISSING"} <= fired(d)
+    assert d.fields["amount"].confidence is Confidence.LOW  # uncertain, not invalid
+
+
+def test_sample_3_restriction_with_operative_amount_is_auto():
+    d = decide(LETTER_3, ex3())
+    assert (d.route, fired(d)) == (Route.AUTO, set())
+
+
+# --- sample 3 misreadings: the subtle extraction must surface, not slip through ------------------
+
+SUPERSEDED_1267 = Candidate(value="1267.00", source_quote="Restricted amount to seize: EUR 1,267.00", role="?")
+
+
+@pytest.mark.parametrize("extraction, rule", [
+    # took the original order's figure instead of the restricted one
+    (ex3(amount=amount("4250.00", "in the amount of EUR 4,250.00", candidates=[SUPERSEDED_1267])),
+     "RESTRICTION_NOT_REDUCING"),
+    # right figure, but ignored the other one in the letter
+    (ex3(amount=amount("1267.00", "Restricted amount to seize: EUR 1,267.00")), "AMOUNT_UNEXPLAINED_FIGURES"),
+    # unsure which figure applies
+    (ex3(amount=amount("1267.00", "Restricted amount to seize: EUR 1,267.00", status=Status.AMBIGUOUS,
+                       candidates=ex3().amount.other_candidates)), "AMOUNT_UNCERTAIN"),
+], ids=["took-original-amount", "ignored-other-figure", "unsure-which"])
+def test_sample_3_misreadings_need_human(extraction, rule):
+    d = decide(LETTER_3, extraction)
+    assert d.route is Route.NEEDS_HUMAN and rule in fired(d)
+
+
+# --- the deterministic backstops catch an overconfident model ------------------------------------
+
+@pytest.mark.parametrize("text, extraction, rule", [
+    # model says "explicit" but the letter only gives an initial
+    (LETTER_2, ex1(debtor_name=f("M. Meyer", "account holder M. Meyer")), "DEBTOR_NAME_PARTIAL"),
+    # model says "explicit" but the quote is hedged prose
+    (LETTER_2, ex1(amount=amount("4200.00", "in the region of four thousand two hundred euros")),
+     "AMOUNT_NOT_A_FIGURE"),
+    # hallucinated quote: not in the letter
+    (LETTER_1, ex1(debtor_name=f("Jordan B. Meyer", "Debtor: Jordan B. Meyer")), "DEBTOR_NAME_NOT_IN_LETTER"),
+    # real quote, but the value was misread from it
+    (LETTER_1, ex1(amount=amount("4520.00", "Amount to seize: EUR 4,250.00")), "AMOUNT_VALUE_NOT_IN_QUOTE"),
+    (LETTER_1, ex1(account_iban=f("DE44 5001 0517 5407 3249 13", "DE44 5001 0517 5407 3249 31")),
+     "ACCOUNT_IBAN_VALUE_NOT_IN_QUOTE"),
+    # model says absent, but the letter has it: a miss, so a human checks instead of an auto-reject
+    (LETTER_1, ex1(amount=no_amount()), "AMOUNT_MISSED"),
+    (LETTER_1, ex1(case_reference=none()), "CASE_REFERENCE_MISSED"),
+    # malformed value that is not printed in the letter is a misread: human, not reject
+    (LETTER_1, ex1(case_reference=f("AB1042-24", "Case reference: AB-1042/24")),
+     "CASE_REFERENCE_VALUE_NOT_IN_QUOTE"),
+    # two debtors named
+    (LETTER_1, ex1(debtor_name=f("Jordan A. Meyer", candidates=[Candidate(value="Sam Meyer", source_quote="x",
+                                                                          role="co-debtor?")])),
+     "DEBTOR_NAME_HAS_ALTERNATIVES"),
+    (LETTER_1, ex1(document_type_quote="Notice of Hearing"), "DOCUMENT_TYPE_NOT_IN_LETTER"),
+], ids=["initial-only-name", "prose-amount", "hallucinated-quote", "misread-amount", "misread-iban",
+        "missed-amount", "missed-case-ref", "misread-case-ref", "two-debtors", "doc-type-not-in-letter"])
+def test_uncertainty_routes_to_human(text, extraction, rule):
+    d = decide(text, extraction)
+    assert d.route is Route.NEEDS_HUMAN and rule in fired(d), d.reasons
+
+
+# --- hard validation failures: reject, but only on evidence printed in the letter ----------------
+
+NO_AMOUNT_LETTER = LETTER_1.replace("Amount to seize: EUR 4,250.00\n", "")
+NO_REF_LETTER = LETTER_1.replace("Case reference: AB-1042/24\n", "")
+ZERO_LETTER = LETTER_1.replace("EUR 4,250.00", "EUR 0.00")
+BAD_REF_LETTER = LETTER_1.replace("AB-1042/24", "AB1042-24")
+HEARING = "DISTRICT COURT OF EXAMPLETON\nNotice of Hearing\nCase reference: CD-2210/25\n"
+
+
+@pytest.mark.parametrize("text, extraction, rule", [
+    (NO_AMOUNT_LETTER, ex1(amount=no_amount()), "AMOUNT_MISSING"),
+    (NO_REF_LETTER, ex1(case_reference=none()), "CASE_REFERENCE_MISSING"),
+    (ZERO_LETTER, ex1(amount=amount("0.00", "Amount to seize: EUR 0.00")), "AMOUNT_NOT_POSITIVE"),
+    (BAD_REF_LETTER, ex1(case_reference=f("AB1042-24", "Case reference: AB1042-24")), "CASE_REFERENCE_MALFORMED"),
+    (HEARING, ex1(document_type=DocumentType.OTHER, document_type_quote="Notice of Hearing"), "NOT_A_GARNISHMENT"),
+], ids=["no-amount", "no-case-ref", "zero-amount", "malformed-case-ref", "not-a-garnishment"])
+def test_hard_failures_reject(text, extraction, rule):
+    d = decide(text, extraction)
+    assert (d.route, d.primary_rule) == (Route.REJECT, rule), d.reasons
+
+
+BAD_IBAN_LETTER = LETTER_1.replace("3249 31", "3249 32")
+
+
+@pytest.mark.parametrize("text, extraction, rule", [
+    (BAD_IBAN_LETTER, ex1(account_iban=f("DE44 5001 0517 5407 3249 32")), "ACCOUNT_IBAN_INVALID"),
+    (LETTER_1, ex1(amount=amount("4250.00", "Amount to seize: EUR 4,250.00", currency="USD")), "AMOUNT_NOT_EUR"),
+    (LETTER_1, ex1(account_iban=none()), "ACCOUNT_IBAN_MISSING"),
+    (LETTER_1, ex1(debtor_name=none()), "DEBTOR_NAME_MISSING"),
+], ids=["iban-checksum", "not-eur", "no-iban", "no-debtor"])
+def test_soft_failures_need_human_not_reject(text, extraction, rule):
+    d = decide(text, extraction)
+    assert (d.route, d.primary_rule) == (Route.NEEDS_HUMAN, rule), d.reasons
+
+
+# --- combining rules --------------------------------------------------------------------------------
+
+def test_reject_outranks_needs_human_and_all_reasons_are_kept():
+    d = decide(NO_REF_LETTER, ex1(case_reference=none(), debtor_name=f("M. Meyer", "Jordan A. Meyer")))
+    assert (d.route, d.primary_rule) == (Route.REJECT, "CASE_REFERENCE_MISSING")
+    assert {"CASE_REFERENCE_MISSING", "DEBTOR_NAME_PARTIAL", "DEBTOR_NAME_VALUE_NOT_IN_QUOTE"} <= fired(d)
+    assert d.reasons[0].startswith("CASE_REFERENCE_MISSING")
+
+
+def test_same_input_same_decision_even_after_storage_round_trip():
+    stored = Extraction.model_validate_json(ex3().model_dump_json())
+    assert decide(LETTER_3, ex3()) == decide(LETTER_3, ex3()) == decide(LETTER_3, stored)
+
+
+def test_every_rule_is_recorded_fired_or_not():
+    d = decide(LETTER_1, ex1())
+    amount_rules = {r.rule for r in d.fields["amount"].rules}
+    assert {"AMOUNT_NOT_A_FIGURE", "AMOUNT_HEDGED", "AMOUNT_UNEXPLAINED_FIGURES", "AMOUNT_NOT_POSITIVE"} <= amount_rules
+    assert all(r.detail for r in d.fields["amount"].rules)
+
+
+def test_extraction_failure_goes_to_a_human():
+    d = extraction_failed("ModelHTTPError: 529 overloaded")
+    assert (d.route, d.primary_rule) == (Route.NEEDS_HUMAN, "EXTRACTION_FAILED")

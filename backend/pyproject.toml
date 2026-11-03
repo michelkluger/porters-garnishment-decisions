@@ -1,0 +1,25 @@
+[project]
+name = "porters-decisions"
+version = "0.1.0"
+description = "Garnishment letter extraction-to-decision service"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.162.0",
+    "pydantic>=2.14.2",
+    "pydantic-ai>=2.65.0",
+    "sqlalchemy>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
