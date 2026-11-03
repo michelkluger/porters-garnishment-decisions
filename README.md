@@ -78,7 +78,7 @@ Or by hand, with uv and Bun installed:
 # backend: http://127.0.0.1:8000 (OpenAPI docs at /docs)
 cd backend
 uv sync
-export ANTHROPIC_API_KEY=...        # PowerShell: $env:ANTHROPIC_API_KEY="..."
+export ANTHROPIC_API_KEY=...        # live mode, optional; PowerShell: $env:ANTHROPIC_API_KEY="..."
 uv run uvicorn app.main:create_app --factory --port 8000
 
 # frontend: http://localhost:3000 (forwards /api/* to the backend)
@@ -89,17 +89,43 @@ bun dev
 
 Drop any file from `samples/` onto the page.
 
-**Without an API key the app runs in demo mode.** Instead of calling the model, it replays real Haiku 5.5 readings
-recorded from a blind run over `samples/` (`backend/recordings/haiku-subagent.json`). Every decision made this
-way is labelled `recorded:claude-haiku-5-5`. A letter with no recording is stored as `needs_human` /
-`EXTRACTION_FAILED`, because a letter must never be lost. With a key set, every letter is a live model call.
+### Demo mode and live mode
+
+**Without an API key the app runs in demo mode.** It calls no model: it replays real Haiku 5.5 readings
+recorded from a blind run over `samples/` (`backend/recordings/haiku-subagent.json`). These decisions are
+labelled `recorded:claude-haiku-5-5`, and their tokens and cost are estimates, marked ≈. A letter with no
+recording is stored as `needs_human` / `EXTRACTION_FAILED`, because a letter must never be lost.
+
+**To go live, set `ANTHROPIC_API_KEY` in the terminal you start the app from.** Every letter is then read by
+the model, Claude Haiku 5.5 by default:
+
+```powershell
+# Windows (PowerShell)
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+powershell -ExecutionPolicy Bypass -File start.ps1
+```
+
+```sh
+# Linux, macOS
+export ANTHROPIC_API_KEY="sk-ant-..."
+./start.sh
+```
+
+- **Check that it is live:** a decision card's *Model call* tiles show `claude-haiku-5-5` from `anthropic`,
+  with real token counts and cost and no ≈. Demo decisions say "replayed".
+- **Wrong or expired key:** the app still starts, but every letter comes back `needs_human` /
+  `EXTRACTION_FAILED`, with the model's error on the card.
+- **Where the key lives:** only in that terminal's environment. The app reads no `.env` file and stores the key
+  nowhere, so set it again in a new terminal.
+- **Cost:** about $0.0004 per letter with Haiku 5.5 (about $0.40 per 1,000 letters). To use Claude Opus 5.5
+  instead (about $0.014 per letter), also set `PORTERS_MODEL=anthropic:claude-opus-5-5`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (none) | credentials for the default model |
+| `ANTHROPIC_API_KEY` | (none) | set it to go live (see above); without it, demo mode |
 | `PORTERS_EXTRACTOR` | `llm` if a key is set, else `recorded` | force live calls (`llm`) or replay (`recorded`) |
 | `PORTERS_RECORDINGS` | `backend/recordings/haiku-subagent.json` | recordings replayed in demo mode |
-| `PORTERS_MODEL` | `anthropic:claude-opus-5-5` | any Pydantic AI model string, e.g. another provider |
+| `PORTERS_MODEL` | `anthropic:claude-haiku-5-5` | any Pydantic AI model string, e.g. `anthropic:claude-opus-5-5` or another provider (with that provider's key) |
 | `PORTERS_DB_URL` | `sqlite:///porters.db` | SQLAlchemy URL of the decision log |
 | `API_URL` (frontend) | `http://127.0.0.1:8000` | where the Bun server forwards `/api/*` |
 
@@ -118,7 +144,7 @@ source quote, every rule evaluated (fired or not), the raw extraction and the mo
 ```sh
 cd backend
 uv run pytest                                           # rules, API, recorded Haiku readings; no key, ~5 s
-PORTERS_LLM_TESTS=1 uv run pytest tests/test_samples_llm.py  # real model over every labelled sample (costs money)
+PORTERS_LLM_TESTS=1 uv run pytest tests/test_samples_llm.py  # real model over every labelled sample; needs ANTHROPIC_API_KEY, <1¢
 uv run ruff check && uv run ruff format --check && uv run ty check  # lint (all ruff rules), format, types
 cd ../frontend && bun run typecheck
 ```

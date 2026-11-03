@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_MODEL = "anthropic:claude-opus-5-5"
+DEFAULT_MODEL = "anthropic:claude-haiku-5-5"  # same results as Opus 5.5 on samples/, ~1/36 the cost (NOTES.md 4)
 RECORDINGS = Path(__file__).parents[2] / "recordings" / "haiku-subagent.json"
 
 

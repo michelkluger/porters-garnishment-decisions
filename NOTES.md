@@ -11,8 +11,12 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
    reference; a missing debtor may be a reject instead.
 3. **Case-reference format.** Implemented as the spec's words, `[A-Z]{2}-\d+/\d+`. The example `XX-0000/00`
    suggests exactly 4 and 2 digits. Stricter means more rejects of real letters if courts vary.
-4. **Model and provider.** Default `anthropic:claude-opus-5-5` at its default effort (`medium`); any Pydantic
-   AI model string works via `PORTERS_MODEL`. Cost/quality per letter not measured yet.
+4. **Model and provider.** Default `anthropic:claude-haiku-5-5` at its default effort (`medium`); any Pydantic
+   AI model string works via `PORTERS_MODEL`. Measured on the 9 samples (2026-11-03): Haiku 5.5 and Opus 5.5
+   gave the same route, deciding rule, fields and confidences on every letter, including the embedded
+   instruction; Haiku cost about $0.0004 per letter against $0.014 (~1/36) and was no slower. Nine letters
+   cannot show rare errors: before production, compare both on a larger labelled set, counting false `auto`
+   first.
 5. **Refusals.** A model refusal currently becomes `EXTRACTION_FAILED` → `needs_human`. Anthropic's
    server-side refusal fallback was not enabled: I could not test it here, and a wrong parameter would break
    every call.
