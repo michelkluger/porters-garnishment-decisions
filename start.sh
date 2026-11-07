@@ -7,12 +7,12 @@ cd "$(dirname "$0")"
 
 if ! command -v uv >/dev/null; then
   echo "Installing uv..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+  curl -LsSf https://astral.sh/uv/0.13.7/install.sh | sh
   export PATH="${XDG_BIN_HOME:-$HOME/.local/bin}:$PATH"
 fi
 if ! command -v bun >/dev/null; then
   echo "Installing Bun..."
-  curl -fsSL https://bun.sh/install | bash
+  curl -fsSL https://bun.sh/install | bash -s bun-v1.4.4
   export PATH="${BUN_INSTALL:-$HOME/.bun}/bin:$PATH"
 fi
 

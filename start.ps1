@@ -16,12 +16,12 @@ function Check { if ($LASTEXITCODE) { exit $LASTEXITCODE } }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "Installing uv..."
-    powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"; Check
+    powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/0.13.7/install.ps1 | iex"; Check
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
 if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
     Write-Host "Installing Bun..."
-    powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://bun.sh/install.ps1 | iex"; Check
+    powershell -NoProfile -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://bun.sh/install.ps1))) -Version 1.4.4"; Check
     $env:Path = "$env:USERPROFILE\.bun\bin;$env:Path"
 }
 
