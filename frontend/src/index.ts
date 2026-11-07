@@ -5,6 +5,8 @@ import index from "./index.html";
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:8000";
 
 const server = serve({
+  // Loopback only: the proxy would otherwise expose the backend (letters, IBANs, the API key's budget) to the LAN.
+  hostname: "127.0.0.1",
   routes: {
     "/api/*": async (req) => {
       const url = new URL(req.url);

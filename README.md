@@ -69,7 +69,7 @@ the backend and the frontend. Ctrl+C stops both.
 powershell -ExecutionPolicy Bypass -File start.ps1   # Windows
 ```
 
-Then open http://localhost:3000 and drop any file from `samples/`. `PORT` (frontend) and `BACKEND_PORT` change
+Then open http://127.0.0.1:3000 and drop any file from `samples/`. `PORT` (frontend) and `BACKEND_PORT` change
 the ports. On a fresh machine, open a new terminal afterwards so `uv` and `bun` are on your `PATH`.
 
 Or by hand, with uv and Bun installed:
@@ -81,7 +81,7 @@ uv sync
 export ANTHROPIC_API_KEY=...        # live mode, optional; PowerShell: $env:ANTHROPIC_API_KEY="..."
 uv run uvicorn app.main:create_app --factory --port 8000
 
-# frontend: http://localhost:3000 (forwards /api/* to the backend)
+# frontend: http://127.0.0.1:3000 (forwards /api/* to the backend)
 cd frontend
 bun install
 bun dev

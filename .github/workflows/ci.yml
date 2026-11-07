@@ -36,7 +36,7 @@ jobs:
         run: |
           PATH=/usr/bin:/bin ./start.sh > quickstart.log 2>&1 &
           for i in $(seq 150); do
-            curl -fs -o /dev/null localhost:3000/api/docs && exit 0
+            curl -fs -o /dev/null 127.0.0.1:3000/api/docs && exit 0
             kill -0 $! 2>/dev/null || break
             sleep 2
           done
@@ -48,6 +48,6 @@ jobs:
           $env:Path = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
           $p = Start-Process powershell -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "start.ps1" -RedirectStandardOutput quickstart.log -RedirectStandardError quickstart.err -PassThru
           for ($i = 0; $i -lt 150 -and -not $p.HasExited; $i++) {
-            try { Invoke-WebRequest http://localhost:3000/api/docs -TimeoutSec 2 | Out-Null; exit 0 } catch { Start-Sleep 2 }
+            try { Invoke-WebRequest http://127.0.0.1:3000/api/docs -TimeoutSec 2 | Out-Null; exit 0 } catch { Start-Sleep 2 }
           }
           Get-Content quickstart.log, quickstart.err; exit 1
