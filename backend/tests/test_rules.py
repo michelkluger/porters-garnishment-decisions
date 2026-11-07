@@ -179,8 +179,17 @@ SUPERSEDED_1267 = Candidate(value="1267.00", source_quote="Restricted amount to 
             ),
             "RESTRICTION_NOT_REDUCING",
         ),
+        # read as a plain order, took the superseded figure and listed the restricted one as a rival
+        (
+            ex3(
+                document_type=DocumentType.ORDER,
+                document_type_quote="Order of Attachment",
+                amount=amount("4250.00", "in the amount of EUR 4,250.00", candidates=[SUPERSEDED_1267]),
+            ),
+            "AMOUNT_HAS_ALTERNATIVES",
+        ),
     ],
-    ids=["took-original-amount", "ignored-other-figure", "unsure-which", "invented-higher-rival"],
+    ids=["took-original-amount", "ignored-other-figure", "unsure-which", "invented-higher-rival", "read-as-order"],
 )
 def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> None:
     """Each plausible misreading of the restriction is caught by a named rule."""

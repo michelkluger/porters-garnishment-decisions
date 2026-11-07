@@ -76,7 +76,9 @@ How the samples come out: letter 1 → nothing fires → `auto`. Letter 2 → pa
 no IBAN → `needs_human` (not reject: an amount is present, only inexact). Letter 3 → two figures; the model
 names 1,267 operative and 4,250 superseded, 1,267 < 4,250, all figures accounted for → `auto`. A reading
 that takes 4,250 trips `RESTRICTION_NOT_REDUCING`; one that ignores the other figure trips
-`AMOUNT_UNEXPLAINED_FIGURES`; an unsure one trips `AMOUNT_UNCERTAIN`. None of this keys on sample wording.
+`AMOUNT_UNEXPLAINED_FIGURES`; an unsure one trips `AMOUNT_UNCERTAIN`; one that calls it a plain order and lists
+1,267 as a rival trips `AMOUNT_HAS_ALTERNATIVES` (outside a restriction nothing checks which figure applies).
+None of this keys on sample wording.
 
 ## Data model and API contract
 

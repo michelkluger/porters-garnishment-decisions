@@ -301,6 +301,17 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
                 "every EUR figure in the letter is accounted for",
             ),
         ),
+        # only a restriction has a rule for which cited figure applies; anywhere else the choice is unchecked
+        _rule(
+            "AMOUNT_HAS_ALTERNATIVES",
+            name,
+            NH,
+            fired=not is_restriction and bool(others),
+            detail=(
+                f"the letter also cites EUR {sorted(map(str, others))} as rival amounts",
+                "restriction: checked by RESTRICTION_NOT_REDUCING" if is_restriction else "no rival EUR figures",
+            ),
+        ),
         _rule(
             "RESTRICTION_NOT_REDUCING",
             name,
