@@ -49,12 +49,6 @@ def _norm(s: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", s).split())
 
 
-def _in(fragment: str | None, text: str) -> bool:
-    """Is the fragment in the text, ignoring spacing (not case). Used to check that a quote is really in the letter."""
-    fragment = _norm(fragment or "")
-    return bool(fragment) and fragment in _norm(text)
-
-
 def _quote_lines(quote: str, text: str) -> str:
     """Return the whole letter line(s) the quote sits on, or the quote itself if it is not in the letter."""
     text = unicodedata.normalize("NFKC", text) + "\n"
@@ -64,7 +58,10 @@ def _quote_lines(quote: str, text: str) -> str:
 
 
 def _verbatim(value: str | None, text: str | None) -> bool:
-    """Is the value in the text exactly as written and whole: "AB-1042/2" is not in "AB-1042/24"."""
+    """Is the value in the text exactly as written and whole, ignoring spacing (not case).
+
+    "AB-1042/2" is not in "AB-1042/24", and a quote "Ann Meyer" is not in a letter that says "JoAnn Meyer".
+    """
     value = _norm(value or "")
     return bool(value) and re.search(rf"(?<![\w/-]){re.escape(value)}(?![\w/-])", _norm(text or "")) is not None
 
@@ -118,7 +115,7 @@ def _common(name: str, f: ExtractedField, text: str) -> list[RuleResult]:
             f"{tag}_NOT_IN_LETTER",
             name,
             NH,
-            fired=not _in(f.source_quote, text),
+            fired=not _verbatim(f.source_quote, text),
             detail=(f"quote {f.source_quote!r} does not appear in the letter", "quote found in the letter"),
         ),
         _rule(
@@ -257,7 +254,7 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     # the prompt asks for the shortest quote, which drops a hedge just before the figure ("approximately EUR 3,000")
     quote_lines = _quote_lines(quote, text)
     in_quote = _figures(quote)
-    grounded = _in(quote, text) and value in in_quote
+    grounded = _verbatim(quote, text) and value in in_quote
     # only rivals printed in the letter count: an invented higher figure must not make a restriction look reducing
     others = {d for c in ex.amount.other_candidates if (d := _dec(c.value)) is not None} & in_letter
     unexplained = in_letter - {value} - others
@@ -340,7 +337,7 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
 
 
 def _document(ex: Extraction, text: str) -> list[RuleResult]:
-    grounded = _in(ex.document_type_quote, text)
+    grounded = _verbatim(ex.document_type_quote, text)
     other = ex.document_type is DocumentType.OTHER and grounded
     # The type is the model's judgement, so it alone must not reject a letter that names an EUR sum.
     eur = sorted(map(str, _eur_amounts(text)))

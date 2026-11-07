@@ -262,6 +262,9 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
             "ACCOUNT_IBAN_HAS_ALTERNATIVES",
         ),
         (LETTER_1 + "See also case CD-2210/25.\n", ex1(), "CASE_REFERENCE_HAS_ALTERNATIVES"),
+        # the quote is in the letter, but cut out of a longer name: not whole words
+        (LETTER_1.replace("Jordan A.", "JoAnn"), ex1(debtor_name=f("Ann Meyer")), "DEBTOR_NAME_NOT_IN_LETTER"),
+        (LETTER_1.replace("Jordan A.", "Jo-Ann"), ex1(debtor_name=f("Ann Meyer")), "DEBTOR_NAME_NOT_IN_LETTER"),
     ],
     ids=[
         "initial-only-name",
@@ -284,6 +287,8 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         "ca-hedge-outside-quote",
         "second-iban-in-letter",
         "second-case-ref-in-letter",
+        "name-quote-inside-longer-name",
+        "name-quote-inside-hyphenated-name",
     ],
 )
 def test_uncertainty_routes_to_human(text: str, extraction: Extraction, rule: str) -> None:

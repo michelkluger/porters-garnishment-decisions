@@ -51,7 +51,7 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 - Overconfident wrong extraction that passes every check. A grounded, well-formed, wrong value, e.g. the
   wrong one of two names that are both in the letter. The candidates list and self-consistency narrow this;
   only labelled data measures it.
-- Grounding is substring matching. Robust to whitespace, not to case, OCR noise or reformatting. Fine
+- Grounding is whole-word substring matching. Robust to whitespace, not to case, OCR noise or reformatting. Fine
   for `.txt`, insufficient once scans arrive.
 - Number formats. Only `4,250.00` style is parsed. A European `4.250,00` fails the value-vs-quote check
   and goes to a human (safe, but noisy). Marked `shortcut:` in `rules.py`.
