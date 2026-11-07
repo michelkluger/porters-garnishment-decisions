@@ -20,7 +20,7 @@ from .schema import (
     Status,
 )
 
-RULES_VERSION = "2"
+RULES_VERSION = "3"
 
 NH, REJECT = Route.NEEDS_HUMAN, Route.REJECT
 _SEVERITY = {Route.AUTO: 0, Route.NEEDS_HUMAN: 1, Route.REJECT: 2}
@@ -31,7 +31,9 @@ _UNCERTAIN = {Status.APPROXIMATE, Status.PARTIAL, Status.AMBIGUOUS}
 _FIGURE = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
 # the lookbehind stops a suffix figure starting mid-number, which made long digit runs backtrack quadratically
 _EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|(?<![\d,.])({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE)
-_HEDGE = re.compile(r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b", re.IGNORECASE)
+_HEDGE = re.compile(
+    r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b|\bca\.", re.IGNORECASE
+)
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
 _INITIAL = re.compile(r"[^\W\d_]\.?")
 _TITLE = re.compile(r"(?:mr|mrs|ms|miss|dr|herr|frau)\.?\s+", re.IGNORECASE)
@@ -46,6 +48,14 @@ def _in(fragment: str | None, text: str) -> bool:
     """Is the fragment in the text, ignoring spacing (not case). Used to check that a quote is really in the letter."""
     fragment = _norm(fragment or "")
     return bool(fragment) and fragment in _norm(text)
+
+
+def _quote_lines(quote: str, text: str) -> str:
+    """Return the whole letter line(s) the quote sits on, or the quote itself if it is not in the letter."""
+    text = unicodedata.normalize("NFKC", text) + "\n"
+    words = _norm(quote).split()
+    hits = re.finditer(r"\s+".join(map(re.escape, words)), text) if words else ()
+    return "\n".join(text[text.rfind("\n", 0, m.start()) + 1 : text.find("\n", m.end())] for m in hits) or quote
 
 
 def _verbatim(value: str | None, text: str | None) -> bool:
@@ -229,6 +239,8 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
         ]
 
     quote = f.source_quote or ""
+    # the prompt asks for the shortest quote, which drops a hedge just before the figure ("approximately EUR 3,000")
+    quote_lines = _quote_lines(quote, text)
     in_quote = _figures(quote)
     grounded = _in(quote, text) and value in in_quote
     # only rivals printed in the letter count: an invented higher figure must not make a restriction look reducing
@@ -257,8 +269,8 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
             "AMOUNT_HEDGED",
             name,
             NH,
-            fired=bool(_HEDGE.search(quote)),
-            detail=(f"amount is hedged: {quote!r}", "no hedging words"),
+            fired=bool(_HEDGE.search(quote_lines)),
+            detail=(f"amount is hedged: {quote_lines!r}", "no hedging words"),
         ),
         # the figure must also be printed as EUR in the letter, whatever currency the model reports
         _rule(

@@ -26,6 +26,7 @@ SAMPLES = Path(__file__).parents[2] / "samples"
 LETTER_1 = (SAMPLES / "01-order.auto.txt").read_text(encoding="utf-8")
 LETTER_2 = (SAMPLES / "02-vague-follow-up.needs_human.txt").read_text(encoding="utf-8")
 LETTER_3 = (SAMPLES / "03-restriction.auto.txt").read_text(encoding="utf-8")
+LETTER_9 = (SAMPLES / "09-embedded-instruction.needs_human.txt").read_text(encoding="utf-8")
 E, ABSENT = Status.EXPLICIT, Status.ABSENT
 
 
@@ -85,6 +86,16 @@ def ex2() -> Extraction:
         debtor_name=f("M. Meyer", "account holder M. Meyer", status=Status.PARTIAL),
         amount=amount("4200.00", "in the region of four thousand two hundred euros", status=Status.APPROXIMATE),
         account_iban=none(),
+    )
+
+
+def ex9() -> Extraction:
+    """Return sample letter 9 read obediently: shortest quote "EUR 3,000", everything explicit."""
+    return ex1(
+        debtor_name=f("Sofia Lindqvist"),
+        amount=amount("3000.00", "EUR 3,000"),
+        case_reference=f("LM-3304/26"),
+        account_iban=f("DE89 3704 0044 0532 0130 00"),
     )
 
 
@@ -232,6 +243,9 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         (LETTER_1.replace("Jordan A. Meyer", "Mr. Meyer"), ex1(debtor_name=f("Mr. Meyer")), "DEBTOR_NAME_PARTIAL"),
         (LETTER_1, ex1(amount=amount("NaN", "Amount to seize: EUR 4,250.00")), "AMOUNT_UNPARSEABLE"),
         (LETTER_1.replace("Amount to seize: EUR", "Amount (EUR):"), ex1(amount=no_amount()), "AMOUNT_MISSED"),
+        # the shortest quote "EUR 3,000" leaves out the hedge just before it on the same line
+        (LETTER_9, ex9(), "AMOUNT_HEDGED"),
+        (LETTER_9.replace("approximately", "ca."), ex9(), "AMOUNT_HEDGED"),
     ],
     ids=[
         "initial-only-name",
@@ -250,6 +264,8 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         "title-and-surname",
         "nan-amount",
         "missed-amount-eur-label",
+        "hedge-outside-quote",
+        "ca-hedge-outside-quote",
     ],
 )
 def test_uncertainty_routes_to_human(text: str, extraction: Extraction, rule: str) -> None:
