@@ -323,17 +323,27 @@ HEARING = "DISTRICT COURT OF EXAMPLETON\nNotice of Hearing\nCase reference: CD-2
     ("text", "extraction", "rule"),
     [
         (NO_AMOUNT_LETTER, ex1(amount=no_amount()), "AMOUNT_MISSING"),
+        # "eur" inside a word is not a currency
+        (NO_AMOUNT_LETTER + "Monsieur 12, Ingenieur 1990\n", ex1(amount=no_amount()), "AMOUNT_MISSING"),
         (NO_REF_LETTER, ex1(case_reference=none()), "CASE_REFERENCE_MISSING"),
         (ZERO_LETTER, ex1(amount=amount("0.00", "Amount to seize: EUR 0.00")), "AMOUNT_NOT_POSITIVE"),
         (BAD_REF_LETTER, ex1(case_reference=f("AB1042-24", "Case reference: AB1042-24")), "CASE_REFERENCE_MALFORMED"),
         (HEARING, ex1(document_type=DocumentType.OTHER, document_type_quote="Notice of Hearing"), "NOT_A_GARNISHMENT"),
     ],
-    ids=["no-amount", "no-case-ref", "zero-amount", "malformed-case-ref", "not-a-garnishment"],
+    ids=["no-amount", "eur-in-words", "no-case-ref", "zero-amount", "malformed-case-ref", "not-a-garnishment"],
 )
 def test_hard_failures_reject(text: str, extraction: Extraction, rule: str) -> None:
     """Reject only on evidence printed in the letter."""
     d = decide(text, extraction)
     assert (d.route, d.primary_rule) == (Route.REJECT, rule), d.reasons
+
+
+@pytest.mark.parametrize("printed", ["4.250,00 €", "EUR 4.250,00"])
+def test_european_amount_is_read_whole_and_goes_to_a_human(printed: str) -> None:
+    """A European figure is one sum, not EUR 0 or EUR 4.25, so a model that missed it is checked, not rejected."""
+    d = decide(LETTER_1.replace("EUR 4,250.00", printed), ex1(amount=no_amount()))
+    assert (d.route, d.primary_rule) == (Route.NEEDS_HUMAN, "AMOUNT_MISSED"), d.reasons
+    assert "['4250.00']" in d.reasons[0]
 
 
 BAD_IBAN_LETTER = LETTER_1.replace("3249 31", "3249 32")

@@ -29,8 +29,11 @@ _UNCERTAIN = {Status.APPROXIMATE, Status.PARTIAL, Status.AMBIGUOUS}
 # shortcut: English number format only ("4,250.00"); "4.250,00" fails the value-vs-quote check
 # and goes to a human. Upgrade when letters arrive in other locales.
 _FIGURE = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+_NUMBER = r"-?\d(?:[\d.,]*\d)?"  # the whole printed number, so "4.250,00" is never read as "4.250" or "00"
 # the lookbehind stops a suffix figure starting mid-number, which made long digit runs backtrack quadratically
-_EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|(?<![\d,.])({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE)
+_EUR_AMOUNT = re.compile(
+    rf"(?:\bEUR|€)[\s:)]*({_NUMBER})|(?<![\d,.])({_NUMBER})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE
+)
 _HEDGE = re.compile(
     r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b|\bca\.", re.IGNORECASE
 )
@@ -79,7 +82,10 @@ def _figures(s: str) -> set[Decimal]:
 
 
 def _eur_amounts(text: str) -> set[Decimal]:
-    return {d for a, b in _EUR_AMOUNT.findall(text) if (d := _dec(a or b)) is not None}
+    nums = [a or b for a, b in _EUR_AMOUNT.findall(text)]
+    # read a non-English number as European ("4.250,00"): the letter still cites a sum, so a human checks it
+    nums = [n if re.fullmatch(_FIGURE, n) else n.replace(".", "").replace(",", ".") for n in nums]
+    return {d for n in nums if (d := _dec(n)) is not None}
 
 
 def _compact(s: str) -> str:
