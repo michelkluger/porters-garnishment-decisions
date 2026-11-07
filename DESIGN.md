@@ -59,7 +59,8 @@ first such rule in a fixed order is the `primary_rule`.
 - **Needs human, per field:** `*_NOT_IN_LETTER` (quote not found; case-sensitive, spacing-tolerant),
   `*_VALUE_NOT_IN_QUOTE` (misread; a name or case reference must appear whole and exactly as written, so
   `AB-1042/2` is not in `AB-1042/24`), `*_UNCERTAIN` (model said approximate/partial/ambiguous),
-  `*_HAS_ALTERNATIVES` (rival values for a single-valued field), `*_MISSED` (model says absent, letter has it).
+  `*_HAS_ALTERNATIVES` (rival values for a single-valued field; for the IBAN and case reference also any other
+  one printed in the letter, listed by the model or not), `*_MISSED` (model says absent, letter has it).
 - **Needs human, field-specific:** `DEBTOR_NAME_PARTIAL` (initial-only, one word, or title + surname),
   `AMOUNT_NOT_A_FIGURE`, `AMOUNT_HEDGED`, `AMOUNT_NOT_EUR`, `AMOUNT_UNEXPLAINED_FIGURES`,
   `RESTRICTION_NOT_REDUCING`, `ACCOUNT_IBAN_INVALID`, `ACCOUNT_IBAN_MISSING`, `DEBTOR_NAME_MISSING`,

@@ -35,6 +35,8 @@ _HEDGE = re.compile(
     r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b|\bca\.", re.IGNORECASE
 )
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
+# shortcut: finds IBANs printed unspaced or in single-space groups of four only. Widen if letters print them otherwise.
+_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b")
 _INITIAL = re.compile(r"(?:[^\W\d_]\.)*[^\W\d_]\.?")  # "J", "J." or "J.A."
 _TITLE = re.compile(r"^(?:(?:mr|mrs|ms|miss|dr|prof|herr|frau)\.?\s+)+", re.IGNORECASE)  # "Herr Dr. ", not "Alexandr "
 _FULL_NAME_WORDS = 2  # a first name and a surname
@@ -123,9 +125,12 @@ def _common(name: str, f: ExtractedField, text: str) -> list[RuleResult]:
     ]
 
 
-def _single_value(name: str, f: ExtractedField) -> RuleResult:
-    """Name, case reference and IBAN have exactly one right answer; any rival means ambiguity."""
-    rivals = [c.value for c in f.other_candidates]
+def _single_value(name: str, f: ExtractedField, in_letter: set[str] | frozenset[str] = frozenset()) -> RuleResult:
+    """Name, case reference and IBAN have exactly one right answer; any rival means ambiguity.
+
+    `in_letter` holds other values of the field printed in the letter: rivals even when the model did not list them.
+    """
+    rivals = [c.value for c in f.other_candidates] + sorted(in_letter)
     return _rule(
         f"{name.upper()}_HAS_ALTERNATIVES",
         name,
@@ -192,7 +197,7 @@ def _case_reference(f: ExtractedField, text: str) -> list[RuleResult]:
             fired=malformed and _verbatim(value, text),
             detail=(f"{value!r} is not in the format XX-0000/00", "format XX-0000/00"),
         ),
-        _single_value(name, f),
+        _single_value(name, f, set(_CASE_REF.findall(text)) - {value.strip()}),
     ]
 
 
@@ -218,7 +223,7 @@ def _account_iban(f: ExtractedField, text: str) -> list[RuleResult]:
             fired=not _iban_valid(value),
             detail=(f"{value!r} fails the IBAN format or checksum", "IBAN checksum valid"),
         ),
-        _single_value(name, f),
+        _single_value(name, f, {_compact(m) for m in _IBAN.findall(text)} - {_compact(value)}),
     ]
 
 

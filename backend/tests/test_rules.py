@@ -255,6 +255,13 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         # the shortest quote "EUR 3,000" leaves out the hedge just before it on the same line
         (LETTER_9, ex9(), "AMOUNT_HEDGED"),
         (LETTER_9.replace("approximately", "ca."), ex9(), "AMOUNT_HEDGED"),
+        # the letter holds a second IBAN or case reference the model did not list: it may have taken the wrong one
+        (
+            LETTER_1 + "Court fees to: DE89 3704 0044 0532 0130 00\n",
+            ex1(account_iban=f("DE89 3704 0044 0532 0130 00")),
+            "ACCOUNT_IBAN_HAS_ALTERNATIVES",
+        ),
+        (LETTER_1 + "See also case CD-2210/25.\n", ex1(), "CASE_REFERENCE_HAS_ALTERNATIVES"),
     ],
     ids=[
         "initial-only-name",
@@ -275,6 +282,8 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         "missed-amount-eur-label",
         "hedge-outside-quote",
         "ca-hedge-outside-quote",
+        "second-iban-in-letter",
+        "second-case-ref-in-letter",
     ],
 )
 def test_uncertainty_routes_to_human(text: str, extraction: Extraction, rule: str) -> None:
