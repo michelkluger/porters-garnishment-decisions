@@ -8,6 +8,23 @@ import "./index.css";
 
 const isText = (f: File) => f.type === "text/plain" || f.name.toLowerCase().endsWith(".txt");
 
+// Cap in-flight model calls across all drops so a big batch doesn't trip provider rate limits.
+const MAX_UPLOADS = 3;
+let active = 0;
+const waiting: (() => void)[] = [];
+
+async function limited<T>(task: () => Promise<T>): Promise<T> {
+  if (active < MAX_UPLOADS) active++;
+  else await new Promise<void>((resolve) => waiting.push(resolve)); // a finishing task hands us its slot
+  try {
+    return await task();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else active--;
+  }
+}
+
 export function App() {
   const [items, setItems] = useState<Item[]>([]);
 
@@ -19,7 +36,7 @@ export function App() {
     setItems((xs) => [{ ...base, state: "pending" }, ...xs]);
     try {
       if (!isText(file)) throw new Error("Only plain-text (.txt) letters for now. PDFs and scans need OCR, which is out of scope.");
-      settle(key, { ...base, state: "done", decision: await submitLetter(await file.text()) });
+      settle(key, { ...base, state: "done", decision: await limited(async () => submitLetter(await file.text())) });
     } catch (e) {
       settle(key, { ...base, state: "error", message: e instanceof Error ? e.message : String(e) });
     }
