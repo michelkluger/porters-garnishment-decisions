@@ -55,7 +55,8 @@ All rules are always evaluated; the route is the most severe that fired (reject 
 first such rule in a fixed order is the `primary_rule`.
 
 - **Reject:** `NOT_A_GARNISHMENT`, `CASE_REFERENCE_MISSING`, `CASE_REFERENCE_MALFORMED`, `AMOUNT_MISSING`,
-  `AMOUNT_NOT_POSITIVE`. Each only on grounded evidence, as above.
+  `AMOUNT_NOT_POSITIVE`. Each only on grounded evidence, as above. On a restriction the two amount rules go
+  to a human instead: EUR 0 or "lifted in full" is a valid release, not an invalid order.
 - **Needs human, per field:** `*_NOT_IN_LETTER` (quote not found; case-sensitive, spacing-tolerant),
   `*_VALUE_NOT_IN_QUOTE` (misread; a name or case reference must appear whole and exactly as written, so
   `AB-1042/2` is not in `AB-1042/24`), `*_UNCERTAIN` (model said approximate/partial/ambiguous),

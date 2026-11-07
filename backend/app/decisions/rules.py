@@ -231,11 +231,14 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     name, f = "amount", ex.amount
     in_letter = _eur_amounts(text)
     shown = sorted(map(str, in_letter))
+    is_restriction = ex.document_type is DocumentType.RESTRICTION
+    # a restriction to EUR 0, or lifted with no figure, is a valid release: a human checks it, never a reject
+    hard = NH if is_restriction else REJECT
     if (raw := _present(f)) is None:
         if in_letter:
             missed = f"model found none, but the letter contains EUR {shown}"
             return [_rule("AMOUNT_MISSED", name, NH, fired=True, detail=(missed, ""))]
-        return [_rule("AMOUNT_MISSING", name, REJECT, fired=True, detail=("no amount in the letter", ""))]
+        return [_rule("AMOUNT_MISSING", name, hard, fired=True, detail=("no amount in the letter", ""))]
 
     value = _dec(raw)
     if value is None:
@@ -253,7 +256,6 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     others = {d for c in ex.amount.other_candidates if (d := _dec(c.value)) is not None} & in_letter
     unexplained = in_letter - {value} - others
     eur = (f.currency or "").strip().upper() in {"EUR", "€"} and value in in_letter
-    is_restriction = ex.document_type is DocumentType.RESTRICTION
     reduces = any(o > value for o in others)
     return [
         *_common(name, f, text),
@@ -293,7 +295,7 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
         _rule(
             "AMOUNT_NOT_POSITIVE",
             name,
-            REJECT,
+            hard,
             fired=value <= 0 and grounded,
             detail=(f"amount {value} is not positive", "amount is positive"),
         ),

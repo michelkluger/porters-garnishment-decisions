@@ -337,6 +337,10 @@ def test_hard_failures_reject(text: str, extraction: Extraction, rule: str) -> N
 
 
 BAD_IBAN_LETTER = LETTER_1.replace("3249 31", "3249 32")
+ZERO_RESTRICTION = LETTER_3.replace("EUR 1,267.00", "EUR 0.00")
+LIFTED_LETTER = LETTER_3.replace(" in the amount of EUR 4,250.00", "").replace(
+    "Restricted amount to seize: EUR 1,267.00", "The attachment is lifted in full."
+)
 
 
 @pytest.mark.parametrize(
@@ -358,8 +362,26 @@ BAD_IBAN_LETTER = LETTER_1.replace("3249 31", "3249 32")
             ex1(document_type=DocumentType.OTHER, document_type_quote="DISTRICT COURT"),
             "NOT_A_GARNISHMENT_UNCONFIRMED",
         ),
+        # a court release must not be rejected and left frozen: a restriction to EUR 0, or lifted with no figure
+        (
+            ZERO_RESTRICTION,
+            ex3(
+                amount=amount("0.00", "Restricted amount to seize: EUR 0.00", candidates=ex3().amount.other_candidates)
+            ),
+            "AMOUNT_NOT_POSITIVE",
+        ),
+        (LIFTED_LETTER, ex3(amount=no_amount()), "AMOUNT_MISSING"),
     ],
-    ids=["iban-checksum", "not-eur", "no-iban", "no-debtor", "letter-says-usd", "order-called-other"],
+    ids=[
+        "iban-checksum",
+        "not-eur",
+        "no-iban",
+        "no-debtor",
+        "letter-says-usd",
+        "order-called-other",
+        "restriction-to-zero",
+        "restriction-lifted",
+    ],
 )
 def test_soft_failures_need_human_not_reject(text: str, extraction: Extraction, rule: str) -> None:
     """Problems a person can resolve go to a person, not to reject."""
