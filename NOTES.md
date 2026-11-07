@@ -58,8 +58,8 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 - IBAN check is shape + mod-97, with no per-country length table. Also a `shortcut:` comment.
 - Rule changes vs old decisions: each record stores `rules_version` and `prompt_version`, but there is no
   migration or replay tooling yet, and no Alembic: the schema is created on startup.
-- Sync SQLite calls inside an async endpoint. Fine at prototype volume; move to a worker queue or an async
-  driver under real load.
+- Sync rules and SQLite calls run in a worker thread (`asyncio.to_thread`), not on the event loop. Fine at
+  prototype volume; move to a worker queue or an async driver under real load.
 - Demo mode switches on by itself when no key is set. That's convenient for a prototype. In production, set
   `PORTERS_EXTRACTOR=llm`, and the app refuses to start without a key.
 - Letters contain personal data and are stored in plain SQLite with no retention policy. Not acceptable

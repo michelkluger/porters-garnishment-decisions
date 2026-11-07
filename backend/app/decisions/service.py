@@ -1,5 +1,6 @@
 """Use cases: extract, decide, record. No HTTP and no SQL here; those live in the router and repository."""
 
+import asyncio
 import logging
 import uuid
 from dataclasses import asdict
@@ -35,7 +36,11 @@ class DecisionService:
         except Exception as e:  # model down, refusal, bad output: never lose the letter, a human reads it
             log.exception("extraction failed")
             error = f"{type(e).__name__}: {e}"
-            return self._record(text, usage, None, extraction_failed(error), error)
+            return await asyncio.to_thread(self._record, text, usage, None, extraction_failed(error), error)
+        # the rules and the SQLite commit are sync: run them off the event loop so one slow letter blocks no one else
+        return await asyncio.to_thread(self._decide_and_record, text, usage, extraction)
+
+    def _decide_and_record(self, text: str, usage: RunUsage, extraction: Extraction) -> DecisionResponse:
         try:
             decision = decide(text, extraction)
         except Exception as e:  # a rules bug: keep the letter on record for a human, then stay loud (500)

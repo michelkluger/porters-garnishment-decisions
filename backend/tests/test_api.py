@@ -4,6 +4,7 @@ A fixed extractor stands in for the model so the HTTP and storage behaviour is e
 exercised in test_samples_llm.py.
 """
 
+import asyncio
 from decimal import Decimal
 from http import HTTPStatus
 from typing import TYPE_CHECKING, override
@@ -17,13 +18,14 @@ from sqlalchemy.orm import Session
 
 from app.decisions.llm_client import Extractor
 from app.decisions.models import DecisionRow
+from app.decisions.rules import decide
 from app.main import create_app
 from tests.test_rules import LETTER_1, ex1
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from app.decisions.schema import Extraction
+    from app.decisions.schema import Decision, Extraction
 
 
 class FixedExtractor(Extractor):
@@ -107,6 +109,24 @@ def test_rules_crash_is_loud_but_the_letter_is_kept(db_url: str, monkeypatch: py
         row = session.scalars(select(DecisionRow)).one()
     assert (row.route, row.primary_rule, row.letter_text) == ("needs_human", "RULES_FAILED", LETTER_1.strip())
     assert (row.usage, row.cost_usd) == (None, None)  # FixedExtractor makes no model call
+
+
+def test_rules_run_off_the_event_loop(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A slow rule must not stall every other request, so the rules run in a worker thread, not on the loop."""
+    on_loop: list[bool] = []
+
+    def checked_decide(text: str, extraction: Extraction) -> Decision:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:  # raised only off the event loop
+            on_loop.append(False)
+        else:
+            on_loop.append(True)
+        return decide(text, extraction)
+
+    monkeypatch.setattr("app.decisions.service.decide", checked_decide)
+    assert client(ex1(), db_url).post("/decisions", json={"text": LETTER_1}).status_code == HTTPStatus.CREATED
+    assert on_loop == [False]
 
 
 @pytest.mark.parametrize("result", [ex1(), RuntimeError("model unavailable")], ids=["ok", "failed"])
