@@ -82,6 +82,10 @@ def _letter_key(text: str) -> str:
     return "\n".join(text.strip().splitlines())  # same letter whether uploaded with LF or CRLF
 
 
+class NotRecordedError(LookupError):
+    """Demo mode has no reading of this letter. The message is ours, so unlike a provider's it is safe to show."""
+
+
 class RecordedExtractor:
     """Replays extractions recorded from an earlier real model run, so the app can be demoed without a key.
 
@@ -98,7 +102,7 @@ class RecordedExtractor:
         }
 
     async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
-        """Return the recorded reading of this letter; LookupError if it was never recorded.
+        """Return the recorded reading of this letter; NotRecordedError if it was never recorded.
 
         The recordings have no token counts, so `usage` gets an estimate of what the recorded call spent.
         """
@@ -106,7 +110,7 @@ class RecordedExtractor:
             extraction = self._by_letter[_letter_key(text)]
         except KeyError:
             msg = "no recorded extraction for this letter; set ANTHROPIC_API_KEY for live extraction"
-            raise LookupError(msg) from None
+            raise NotRecordedError(msg) from None
         if usage is not None:
             usage.incr(_estimated_usage(text, extraction, self.model_name.removeprefix("recorded:")))
         return extraction

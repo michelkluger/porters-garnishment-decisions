@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from pydantic_ai.usage import RunUsage
 
-from .llm_client import PROMPT_VERSION, Extractor
+from .llm_client import PROMPT_VERSION, Extractor, NotRecordedError
 from .models import DecisionRow
 from .rules import decide, extraction_failed
 from .schema import Decision, DecisionResponse, Extraction
@@ -35,7 +35,8 @@ class DecisionService:
             extraction = await self._extractor.extract(text, usage)
         except Exception as e:  # model down, refusal, bad output: never lose the letter, a human reads it
             log.exception("extraction failed")
-            error = f"{type(e).__name__}: {e}"
+            # a provider's message can carry its raw response or request metadata: callers get the class, the log all
+            error = f"{type(e).__name__}: {e}" if isinstance(e, NotRecordedError) else type(e).__name__
             return await asyncio.to_thread(self._record, text, usage, None, extraction_failed(error), error)
         # the rules and the SQLite commit are sync: run them off the event loop so one slow letter blocks no one else
         return await asyncio.to_thread(self._decide_and_record, text, usage, extraction)

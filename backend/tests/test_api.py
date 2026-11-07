@@ -91,12 +91,16 @@ def test_get_returns_the_same_decision_with_its_evidence_from_disk(db_url: str) 
     assert got["rules_version"]
 
 
-def test_model_failure_is_recorded_as_needs_human(db_url: str) -> None:
-    """A model error still stores the letter, routed to a person, with the error kept."""
-    c = client(RuntimeError("model unavailable"), db_url)
+def test_model_failure_is_recorded_as_needs_human(db_url: str, caplog: pytest.LogCaptureFixture) -> None:
+    """A model error still stores the letter, routed to a person, with the error's class kept."""
+    c = client(RuntimeError("upstream body {'request_id': 'req_internal'}"), db_url)
     body = c.post("/decisions", json={"text": LETTER_1}).json()
     assert (body["route"], body["primary_rule"]) == ("needs_human", "EXTRACTION_FAILED")
-    assert c.get(f"/decisions/{body['id']}").json()["error"] == "RuntimeError: model unavailable"
+    got = c.get(f"/decisions/{body['id']}")
+    assert got.json()["error"] == "RuntimeError"
+    # a provider's error body can carry internals: the server log gets it, API callers never do
+    assert "req_internal" not in got.text
+    assert "req_internal" in caplog.text
 
 
 def test_rules_crash_is_loud_but_the_letter_is_kept(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:

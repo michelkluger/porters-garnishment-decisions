@@ -114,7 +114,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - **Check that it is live:** a decision card's *Model call* tiles show `claude-haiku-5-5` from `anthropic`,
   with real token counts and cost and no ≈. Demo decisions say "replayed".
 - **Wrong or expired key:** the app still starts, but every letter comes back `needs_human` /
-  `EXTRACTION_FAILED`, with the model's error on the card.
+  `EXTRACTION_FAILED`, with the error's type on the card and the full error in the server log.
 - **Where the key lives:** only in that terminal's environment. The app reads no `.env` file and stores the key
   nowhere, so set it again in a new terminal.
 - **Cost:** about $0.0004 per letter with Haiku 5.5 (about $0.40 per 1,000 letters). To use Claude Opus 5.5
