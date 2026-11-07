@@ -35,8 +35,8 @@ _HEDGE = re.compile(
     r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b|\bca\.", re.IGNORECASE
 )
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
-_INITIAL = re.compile(r"[^\W\d_]\.?")
-_TITLE = re.compile(r"(?:mr|mrs|ms|miss|dr|herr|frau)\.?\s+", re.IGNORECASE)
+_INITIAL = re.compile(r"(?:[^\W\d_]\.)*[^\W\d_]\.?")  # "J", "J." or "J.A."
+_TITLE = re.compile(r"^(?:(?:mr|mrs|ms|miss|dr|prof|herr|frau)\.?\s+)+", re.IGNORECASE)  # "Herr Dr. ", not "Alexandr "
 _FULL_NAME_WORDS = 2  # a first name and a surname
 
 
@@ -141,8 +141,9 @@ def _debtor_name(f: ExtractedField, text: str) -> list[RuleResult]:
         # OPEN: the spec lists no-amount and bad case reference as rejects, not a missing name.
         # Sent to a human until that is agreed.
         return [_rule("DEBTOR_NAME_MISSING", name, NH, fired=True, detail=("no debtor name in the letter", ""))]
-    tokens = _TITLE.sub("", value.strip(), count=1).split()  # "Mr. Meyer" has no first name
-    partial = len(tokens) < _FULL_NAME_WORDS or bool(_INITIAL.fullmatch(tokens[0]))
+    tokens = _TITLE.sub("", value.strip()).split()  # "Mr. Meyer" has no first name
+    # a middle initial is fine ("Jordan A. Meyer"); an initial for the first name or surname is not
+    partial = len(tokens) < _FULL_NAME_WORDS or any(_INITIAL.fullmatch(t) for t in (tokens[0], tokens[-1]))
     return [
         *_common(name, f, text),
         _rule(

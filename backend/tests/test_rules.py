@@ -284,6 +284,23 @@ def test_uncertainty_routes_to_human(text: str, extraction: Extraction, rule: st
     assert rule in fired(d), d.reasons
 
 
+@pytest.mark.parametrize(
+    ("name", "partial"),
+    [
+        ("Herr Dr. Mueller", True),
+        ("Prof. Meyer", True),
+        ("J.A. Meyer", True),
+        ("Jordan M.", True),
+        ("Alexandr Petrov", False),  # the "dr " inside the first name is not a title
+    ],
+)
+def test_partial_name_backstop(name: str, *, partial: bool) -> None:
+    """Titles are stripped only from the start, however many; an initial as first name or surname is partial."""
+    d = decide(LETTER_1.replace("Jordan A. Meyer", name), ex1(debtor_name=f(name)))
+    assert ("DEBTOR_NAME_PARTIAL" in fired(d)) is partial, d.reasons
+    assert d.route is (Route.NEEDS_HUMAN if partial else Route.AUTO), d.reasons
+
+
 # --- hard validation failures: reject, but only on evidence printed in the letter ----------------
 
 NO_AMOUNT_LETTER = LETTER_1.replace("Amount to seize: EUR 4,250.00\n", "")
