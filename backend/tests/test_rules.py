@@ -1,5 +1,6 @@
 """The routing rules, fed hand-built extractions: no model involved, so every case is exact and repeatable."""
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -109,6 +110,15 @@ def test_sample_2_vague_letter_needs_human_not_reject() -> None:
     assert d.route is Route.NEEDS_HUMAN
     assert {"DEBTOR_NAME_PARTIAL", "AMOUNT_NOT_A_FIGURE", "AMOUNT_HEDGED", "ACCOUNT_IBAN_MISSING"} <= fired(d)
     assert d.fields["amount"].confidence is Confidence.LOW  # uncertain, not invalid
+
+
+def test_long_digit_run_is_fast_and_amounts_still_parse() -> None:
+    """A long run of digits must not stall the amount regex; a suffix "4,250.00 EUR" still counts as the amount."""
+    text = LETTER_1.replace("EUR 4,250.00", "4,250.00 EUR") + "\n" + "9" * 10_000
+    start = time.perf_counter()
+    d = decide(text, ex1(amount=amount("4250.00", "Amount to seize: 4,250.00 EUR")))
+    assert time.perf_counter() - start < 1  # the backtracking regex took ~8 s here, minutes at the 50k input limit
+    assert (d.route, fired(d)) == (Route.AUTO, set())
 
 
 def test_sample_3_restriction_with_operative_amount_is_auto() -> None:

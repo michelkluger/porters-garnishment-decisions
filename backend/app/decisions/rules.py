@@ -29,7 +29,8 @@ _UNCERTAIN = {Status.APPROXIMATE, Status.PARTIAL, Status.AMBIGUOUS}
 # shortcut: English number format only ("4,250.00"); "4.250,00" fails the value-vs-quote check
 # and goes to a human. Upgrade when letters arrive in other locales.
 _FIGURE = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-_EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE)
+# the lookbehind stops a suffix figure starting mid-number, which made long digit runs backtrack quadratically
+_EUR_AMOUNT = re.compile(rf"(?:EUR|€)[\s:)]*({_FIGURE})|(?<![\d,.])({_FIGURE})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE)
 _HEDGE = re.compile(r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b", re.IGNORECASE)
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
 _INITIAL = re.compile(r"[^\W\d_]\.?")
