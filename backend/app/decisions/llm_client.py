@@ -1,6 +1,7 @@
 """LLM adapter: the only module that talks to a model. It reports what the letter says, never what to do."""
 
 import json
+import re
 from contextlib import suppress
 from typing import TYPE_CHECKING, Protocol
 
@@ -71,7 +72,9 @@ class LLMExtractor:
 
     async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
         """Ask the model what the letter says. `usage` collects tokens and cost even if the run fails."""
-        result = await self._agent.run(f"<letter>\n{text}\n</letter>", usage=usage)
+        # defang any closing tag in the letter so its text cannot end the untrusted block early
+        letter = re.sub(r"<(?=\s*/\s*letter)", "&lt;", text, flags=re.IGNORECASE)
+        result = await self._agent.run(f"<letter>\n{letter}\n</letter>", usage=usage)
         return result.output
 
 
