@@ -20,6 +20,17 @@ jobs:
       - run: uv run ty check
       - run: uv run pytest
 
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
   quickstart:
     strategy:
       fail-fast: false
