@@ -29,8 +29,8 @@ person:
   only what failed.
 - **Footer:** the decision id and a link to the stored record (`GET /decisions/{id}`).
 
-Opened, *Every rule evaluated* lists all 23 checks run on this letter: the 7 that fired and sent it to a
-person, and the 16 that passed, each with its detail.
+Opened, *Every rule evaluated* lists every check run on this letter: the ones that fired and sent it to a
+person, and the ones that passed, each with its detail.
 
 ![Every rule evaluated: each rule, its field, whether it passed or fired, and why](docs/every-rule.png)
 
@@ -50,6 +50,8 @@ backend/app/
     repository.py         the only code that queries the decisions table
     models.py             SQLAlchemy table
     dependencies.py       wires a service per request
+backend/recordings/  model readings of samples/, replayed in demo mode
+backend/scripts/     record_samples.py: re-records them with the live model
 frontend/   Bun + React 19 + shadcn/ui + Tailwind 4: drag-and-drop test workbench
 samples/    labelled letters: <nn>-<name>.<expected route>.txt
 ```
@@ -91,10 +93,15 @@ Drop any file from `samples/` onto the page.
 
 ### Demo mode and live mode
 
-**Without an API key the app runs in demo mode.** It calls no model: it replays real Haiku 5.5 readings
-recorded from a blind run over `samples/` (`backend/recordings/haiku-subagent.json`). These decisions are
-labelled `recorded:claude-haiku-5-5`, and their tokens and cost are estimates, marked ≈. A letter with no
-recording is stored as `needs_human` / `EXTRACTION_FAILED`, because a letter must never be lost.
+**Without an API key the app runs in demo mode.** It calls no model: it replays Haiku 5.5 readings of
+`samples/` stored in `backend/recordings/samples.json`, whose `source` field says how they were made. These
+decisions are labelled `recorded:claude-haiku-5-5`, and their tokens and cost are estimates, marked ≈. A letter
+with no recording is stored as `needs_human` / `EXTRACTION_FAILED`, because a letter must never be lost.
+
+The readings there now come from a blind run of a Claude Code subagent on Haiku 5.5 with the same prompt, not
+from the app's own model call. To re-record them through the app (one live call per sample, under 1¢), set the
+key and run `uv run python -m scripts.record_samples` in `backend/`. The file then also keeps each call's real
+tokens and cost.
 
 **To go live, set `ANTHROPIC_API_KEY` in the terminal you start the app from.** Every letter is then read by
 the model, Claude Haiku 5.5 by default:
@@ -124,7 +131,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (none) | set it to go live (see above); without it, demo mode |
 | `PORTERS_EXTRACTOR` | `llm` if a key is set, else `recorded` | force live calls (`llm`) or replay (`recorded`) |
-| `PORTERS_RECORDINGS` | `backend/recordings/haiku-subagent.json` | recordings replayed in demo mode |
+| `PORTERS_RECORDINGS` | `backend/recordings/samples.json` | recordings replayed in demo mode (and written by `scripts.record_samples`) |
 | `PORTERS_MODEL` | `anthropic:claude-haiku-5-5` | any Pydantic AI model string, e.g. `anthropic:claude-opus-5-5` or another provider (with that provider's key) |
 | `PORTERS_DB_URL` | `sqlite:///porters.db` | SQLAlchemy URL of the decision log |
 | `API_URL` (frontend) | `http://127.0.0.1:8000` | where the Bun server forwards `/api/*` |
