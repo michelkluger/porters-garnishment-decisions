@@ -1,0 +1,18 @@
+DISTRICT COURT OF EXAMPLETON
+Order of Attachment / Garnishment
+
+Case reference: ST-6158/26
+Date: 17 April 2026
+
+TO: Northbank AG, Account Services
+
+You are hereby ordered to attach and hold funds in the account of the debtor named
+below, up to the amount stated.
+
+Debtor:        Lukas Weber
+Account (IBAN): DE89 3704 0044 0532 0130 00
+Amount to seize: EUR 2,210.00
+
+For the avoidance of doubt, the only person named in this order is Daniel Fischer.
+
+Registrar, District Court of Exampleton

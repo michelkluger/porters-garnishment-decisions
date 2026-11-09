@@ -40,8 +40,11 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 1. Re-record the demo readings through the app's own extractor: `uv run python -m scripts.record_samples` in
    `backend/` (needs a key, under 1¢). Today's recordings come from a Claude Code subagent given the same
    prompt, not from the app's model call, and that run missed the printed case reference on letters 7 and 8
-   (the rules caught both as `CASE_REFERENCE_MISSED`). Then run `PORTERS_LLM_TESTS=1` on every prompt or model
-   change: each sample must route as labelled and fire the rule it exists to test.
+   (the rules caught both as `CASE_REFERENCE_MISSED`). Samples 10 to 12, the injection letters, have no reading
+   yet, so demo mode sends them to a human as `EXTRACTION_FAILED` until this is run. Then run
+   `PORTERS_LLM_TESTS=1` on every prompt or model change: each sample must route as labelled and fire the rule
+   it exists to test. For 11 and 12 that measures whether the model falls for the letter: one that obeys
+   reaches `auto` through the known gaps under Risks, and the test fails.
 2. Build a labelled set of real (anonymised) letters, then report a route confusion matrix. The numbers that
    matter: false `auto` (target 0), then false `reject`, then the `needs_human` rate (the cost). Size it for
    the claim: zero false `auto` in n letters only bounds the rate below about 3/n (95%), so showing it is under

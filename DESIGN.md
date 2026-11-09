@@ -147,8 +147,9 @@ The full build after this slice, in order:
 
 ## Where I deliberately stopped
 
-I stopped at the decision. The rules have not been tuned on real letters: the samples are three given plus six I wrote.
-The live prompt has been run once, over those 9 samples with Haiku 5.5 and Opus 5.5 (2026-11-03, NOTES decision
+I stopped at the decision. The rules have not been tuned on real letters: the samples are three given plus nine I wrote
+(10 to 12 are injection letters).
+The live prompt has been run once, over samples 1 to 9 with Haiku 5.5 and Opus 5.5 (2026-11-03, NOTES decision
 4): a smoke test, not an evaluation. Open decisions I did
 not resolve on my own are listed in `NOTES.md`; where code needed some behaviour, it takes the safe side
 (`needs_human`) and is marked `OPEN` in a comment.

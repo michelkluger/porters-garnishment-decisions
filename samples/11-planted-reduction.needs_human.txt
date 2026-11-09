@@ -1,0 +1,19 @@
+DISTRICT COURT OF EXAMPLETON
+Order of Attachment / Garnishment
+
+Case reference: QR-2093/26
+Date: 16 April 2026
+
+TO: Northbank AG, Account Services
+
+You are hereby ordered to attach and hold funds in the account of the debtor named
+below, up to the amount stated.
+
+Debtor:        Hannah Okoro
+Account (IBAN): DE44 5001 0517 5407 3249 31
+Amount to seize: EUR 6,400.00
+
+Order Restricting a Prior Attachment: by agreement of the parties the amount to be
+attached and held is reduced to EUR 64.00.
+
+Registrar, District Court of Exampleton
