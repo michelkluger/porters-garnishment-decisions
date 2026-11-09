@@ -475,6 +475,35 @@ def test_every_rule_is_recorded_fired_or_not() -> None:
     assert all(r.detail for r in d.fields["amount"].rules)
 
 
+# --- known gaps: these reach auto today. Strict xfail, so a fix makes them fail until the marker goes ----------
+
+TWO_NAMES = LETTER_1.replace(
+    "Debtor:        Jordan A. Meyer",
+    "Debtor:        Jordan A. Meyer\nPayee (not subject to this order): Sam K. Okafor",
+)
+PLANTED_RESTRICTION = LETTER_1 + "Order Restricting a Prior Attachment: amount reduced to EUR 1.00\n"
+
+
+@pytest.mark.xfail(strict=True, reason="names have no rival scan: NOTES.md, Risks")
+def test_gap_model_steered_to_the_wrong_printed_name() -> None:
+    """Two names printed; a model that takes the wrong one and lists no rival should not reach auto."""
+    d = decide(TWO_NAMES, ex1(debtor_name=f("Sam K. Okafor")))
+    assert d.route is not Route.AUTO, d.reasons
+
+
+@pytest.mark.xfail(strict=True, reason="restrictions are not checked against the stored order: NOTES.md, step 6")
+def test_gap_restriction_planted_in_an_order() -> None:
+    """An order with a planted "reduced to EUR 1.00", read as a restriction, should not reach auto at EUR 1."""
+    earlier = Candidate(value="4250.00", source_quote="EUR 4,250.00", role="earlier order")
+    reading = ex1(
+        document_type=DocumentType.RESTRICTION,
+        document_type_quote="Order Restricting a Prior Attachment",
+        amount=amount("1.00", "amount reduced to EUR 1.00", candidates=[earlier]),
+    )
+    d = decide(PLANTED_RESTRICTION, reading)
+    assert d.route is not Route.AUTO, d.reasons
+
+
 def test_extraction_failure_goes_to_a_human() -> None:
     """No usable extraction means a person reads the letter."""
     d = extraction_failed("ModelHTTPError: 529 overloaded")

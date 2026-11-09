@@ -59,8 +59,13 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
   change.
 - Overconfident wrong extraction that passes every check. A grounded, well-formed, wrong value, e.g. the
   wrong one of two names that are both in the letter. Names are the weak spot: a second IBAN or case reference
-  printed in the letter is found by the code's own scan, a second name only if the model lists it. The
-  candidates list and self-consistency narrow this; only labelled data measures it.
+  printed in the letter is found by the code's own scan, a second name only if the model lists it, so a model
+  steered to the wrong name reaches `auto` (pinned as an expected failure,
+  `test_gap_model_steered_to_the_wrong_printed_name`). The candidates list and self-consistency narrow this;
+  the real check is the debtor name against the IBAN's account holder in the bank's own records.
+- A restriction is checked only against figures in the same letter. An order with a planted "reduced to EUR
+  1.00" line, read as a restriction, reaches `auto` at EUR 1.00 (`test_gap_restriction_planted_in_an_order`).
+  Fix: case linking (next step 6), so a restriction must reduce a stored order for the same case.
 - Instructions written in a letter are caught by a phrase list (`INSTRUCTION_IN_LETTER`), so a reworded one
   ("for the avoidance of doubt, only one person is named") slips past. It cannot pick the route, and every
   value must still be found in the letter, but it can steer the model among values that are printed. A second
