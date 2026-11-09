@@ -70,7 +70,9 @@ letter differently, and every decision stores the version that made it.
   `AMOUNT_NOT_A_FIGURE`, `AMOUNT_UNPARSEABLE` (the model's value is not a number), `AMOUNT_HEDGED`,
   `AMOUNT_NOT_EUR`, `AMOUNT_UNEXPLAINED_FIGURES`, `RESTRICTION_NOT_REDUCING`, `ACCOUNT_IBAN_INVALID`,
   `ACCOUNT_IBAN_MISSING`, `DEBTOR_NAME_MISSING`, `DOCUMENT_TYPE_NOT_IN_LETTER`, `NOT_A_GARNISHMENT_UNCONFIRMED`
-  (model says "not a garnishment", but the letter cites an EUR sum, in figures or words).
+  (model says "not a garnishment", but the letter cites an EUR sum, in figures or words), `INSTRUCTION_IN_LETTER`
+  (text addressed to a machine reader, such as "ignore previous instructions" or a note to automated systems;
+  read from the letter, not the model, and a phrase list, so a backstop rather than a defence).
 - **Needs human, system:** `EXTRACTION_FAILED` (model down, refusal, schema-invalid output), `RULES_FAILED`
   (a bug in the rules; also returned as `500`).
 
@@ -113,8 +115,10 @@ from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 
   the whole attempt. Bugs in the
   rules still return `500` so they get noticed, but the letter is stored first as `RULES_FAILED`.
 - **Prompt injection:** the letter is wrapped and declared untrusted, but the real defence is structural:
-  the model cannot pick the route, every value must be found in the letter, and its document type alone cannot
-  reject a letter that cites an EUR sum.
+  the model cannot pick the route, never sees the rules (they run after it, in code, so "disregard the rules"
+  has nothing to act on), has no tools, every value must be found in the letter, and its document type alone
+  cannot reject a letter that cites an EUR sum. `INSTRUCTION_IN_LETTER` sends a letter that talks to a machine
+  to a person even when its values are clean. What still gets through is listed in NOTES (Risks).
 - **Pydantic AI + native structured output** (requested): the model's answer is schema-constrained, the
   provider is a config string, and the `Extractor` protocol keeps the rules testable without any model.
 - **Layered backend, one package per domain** (`app/decisions/`): router (HTTP) → service (use case) →

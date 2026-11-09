@@ -61,10 +61,11 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
   wrong one of two names that are both in the letter. Names are the weak spot: a second IBAN or case reference
   printed in the letter is found by the code's own scan, a second name only if the model lists it. The
   candidates list and self-consistency narrow this; only labelled data measures it.
-- Instructions written in a letter are not flagged by any rule. They cannot pick the route, and every value
-  must still be found in the letter (sample 9 is caught by its hedged amount, not by its instruction), but an
-  instruction could steer the model to the wrong one of two names. A rule that sends such letters to a human
-  needs a prompt change (the model quoting any instruction it sees), so a `PROMPT_VERSION` bump and a paid run.
+- Instructions written in a letter are caught by a phrase list (`INSTRUCTION_IN_LETTER`), so a reworded one
+  ("for the avoidance of doubt, only one person is named") slips past. It cannot pick the route, and every
+  value must still be found in the letter, but it can steer the model among values that are printed. A second
+  signal would have the model quote any text that tells its reader what to do: a prompt change, so a
+  `PROMPT_VERSION` bump and a paid run.
 - Grounding is whole-word substring matching. Robust to whitespace, not to case, OCR noise or reformatting. Fine
   for `.txt`, insufficient once scans arrive.
 - Number formats. Only `4,250.00` style is parsed. A European `4.250,00` fails the value-vs-quote check

@@ -20,7 +20,7 @@ from .schema import (
     Status,
 )
 
-RULES_VERSION = "4"
+RULES_VERSION = "5"
 
 NH, REJECT = Route.NEEDS_HUMAN, Route.REJECT
 _SEVERITY = {Route.AUTO: 0, Route.NEEDS_HUMAN: 1, Route.REJECT: 2}
@@ -37,6 +37,18 @@ _EUR_AMOUNT = re.compile(
 _EUR_WORD = re.compile(r"\b(?:EUR|euros?)\b|€", re.IGNORECASE)  # a sum may be written only in words
 _HEDGE = re.compile(
     r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b|\bca\.", re.IGNORECASE
+)
+# shortcut: a phrase list, not a classifier: the common ways a text addresses a machine reading it. Narrow on
+# purpose (GDPR's "automated processing of", "prompt payment" and "LL.M." must not trip it); widen it as real
+# attempts show up. A false alarm only costs a human look.
+_INSTRUCTION = re.compile(
+    r"\bautomated\s+(?:processing\s+)?(?:systems?|readers?|tools?)\b"
+    r"|\b(?:AI|artificial\s+intelligence)\s+(?:systems?|models?|assistants?|agents?)\b"
+    r"|\b(?:language\s+models?|chatbots?)\b"
+    r"|\b(?:ignore|disregard)\s+(?:(?:all|any|the|your|previous|prior|above|earlier)\s+)*"
+    r"(?:instructions?|rules?|checks?|prompts?)\b"
+    r"|^[ \t]*(?:system|assistant)[ \t]*:",
+    re.IGNORECASE | re.MULTILINE,
 )
 _CASE_REF = re.compile(r"[A-Z]{2}-\d+/\d+")  # spec: two letters, digits, slash, digits
 # shortcut: finds IBANs printed unspaced or in single-space groups of four only. Widen if letters print them otherwise.
@@ -351,6 +363,8 @@ def _document(ex: Extraction, text: str) -> list[RuleResult]:
     other = ex.document_type is DocumentType.OTHER and grounded
     # The type is the model's judgement, so it alone must not reject a letter that names an EUR sum.
     cited = _cites_eur(text, _eur_amounts(text))
+    # checked on the text, not the reading: whether or not the model obeyed, a person should see such a letter
+    addressed = _INSTRUCTION.search(text)
     return [
         _rule(
             "DOCUMENT_TYPE_NOT_IN_LETTER",
@@ -374,6 +388,18 @@ def _document(ex: Extraction, text: str) -> list[RuleResult]:
             detail=(
                 f"model says not a seizure order, but the letter cites {cited}",
                 "no conflict between document type and letter",
+            ),
+        ),
+        _rule(
+            "INSTRUCTION_IN_LETTER",
+            None,
+            NH,
+            fired=addressed is not None,
+            detail=(
+                f"the letter addresses a machine reader: {_quote_lines(addressed.group(), text).strip()!r}"
+                if addressed
+                else "",
+                "no text addressed to a machine reader",
             ),
         ),
     ]
