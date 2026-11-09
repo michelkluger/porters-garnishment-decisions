@@ -99,6 +99,20 @@ def ex9() -> Extraction:
     )
 
 
+# What each sample exists to test: a model reading must route as labelled *and* for this reason.
+SAMPLE_RULES: dict[str, set[str]] = {
+    "01-order.auto": set(),
+    "02-vague-follow-up.needs_human": {"DEBTOR_NAME_PARTIAL", "AMOUNT_HEDGED", "ACCOUNT_IBAN_MISSING"},
+    "03-restriction.auto": set(),
+    "04-hearing-notice.reject": {"NOT_A_GARNISHMENT"},
+    "05-no-case-reference.reject": {"CASE_REFERENCE_MISSING"},
+    "06-zero-amount.reject": {"AMOUNT_NOT_POSITIVE"},
+    "07-bad-iban-checksum.needs_human": {"ACCOUNT_IBAN_INVALID"},
+    "08-usd-amount.needs_human": {"AMOUNT_NOT_EUR"},
+    "09-embedded-instruction.needs_human": {"AMOUNT_HEDGED"},
+}
+
+
 def fired(decision: Decision) -> set[str]:
     """Return the names of every rule that fired."""
     rules = decision.document_rules + [r for fe in decision.fields.values() for r in fe.rules]

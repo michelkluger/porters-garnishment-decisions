@@ -14,6 +14,7 @@ from app.core.config import RECORDINGS
 from app.decisions.llm_client import RecordedExtractor
 from app.decisions.rules import decide
 from app.main import create_app
+from tests.test_rules import SAMPLE_RULES, fired
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,10 +24,12 @@ ITEMS = json.loads(RECORDINGS.read_text(encoding="utf-8"))["items"]
 
 @pytest.mark.parametrize("item", ITEMS, ids=[i["sample"] for i in ITEMS])
 def test_recorded_reading_routes_as_labelled(item: dict[str, Any]) -> None:
-    """Each recorded model reading still routes the way its sample is labelled."""
+    """Each recorded model reading still routes the way its sample is labelled, for the reason the sample tests."""
     extraction = asyncio.run(RecordedExtractor(RECORDINGS).extract(item["letter"]))
-    expected = item["sample"].removesuffix(".txt").rsplit(".", 1)[1]
-    assert decide(item["letter"], extraction).route == expected
+    stem = item["sample"].removesuffix(".txt")
+    d = decide(item["letter"], extraction)
+    assert d.route == stem.rsplit(".", 1)[1], d.reasons
+    assert SAMPLE_RULES[stem] <= fired(d), d.reasons
 
 
 def test_letter_matches_regardless_of_line_endings() -> None:
