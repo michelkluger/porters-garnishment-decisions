@@ -34,10 +34,15 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 
 ## Next steps
 
-1. Run the real model over `samples/` (`PORTERS_LLM_TESTS=1`) and fix the prompt where a sample misroutes.
-   Not done yet: no key in this environment. This is the biggest gap.
+1. Re-record the demo readings through the app's own extractor: `uv run python -m scripts.record_samples` in
+   `backend/` (needs a key, under 1¢). Today's recordings come from a Claude Code subagent given the same
+   prompt, not from the app's model call, and that run missed the printed case reference on letters 7 and 8
+   (the rules caught both as `CASE_REFERENCE_MISSED`). Then run `PORTERS_LLM_TESTS=1` on every prompt or model
+   change: each sample must route as labelled and fire the rule it exists to test.
 2. Build a labelled set of real (anonymised) letters, then report a route confusion matrix. The numbers that
-   matter: false `auto` (target 0), then false `reject`, then the `needs_human` rate (the cost).
+   matter: false `auto` (target 0), then false `reject`, then the `needs_human` rate (the cost). Size it for
+   the claim: zero false `auto` in n letters only bounds the rate below about 3/n (95%), so showing it is under
+   0.1% takes about 3,000 `auto` decisions with none wrong. The 9 samples are a regression gate, not evidence.
 3. Shadow mode: run beside the clerks and compare routes. Switch `auto` on only after a clean period; that
    period is the evidence the rules work.
 4. Self-consistency: two extractions, any disagreement → `needs_human`. Measure its catch rate against cost.
@@ -46,20 +51,30 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 
 ## Risks
 
-- Prompt untested against the live model. The rules are tested against hand-built extractions only.
-  Mitigation: step 1 above, then keep the sample suite as a regression gate on every prompt or model change.
+- Prompt run live only once, over 9 samples. The rules are tested against hand-built extractions and replayed
+  readings. Mitigation: step 1 above, then keep the sample suite as a regression gate on every prompt or model
+  change.
 - Overconfident wrong extraction that passes every check. A grounded, well-formed, wrong value, e.g. the
-  wrong one of two names that are both in the letter. The candidates list and self-consistency narrow this;
-  only labelled data measures it.
+  wrong one of two names that are both in the letter. Names are the weak spot: a second IBAN or case reference
+  printed in the letter is found by the code's own scan, a second name only if the model lists it. The
+  candidates list and self-consistency narrow this; only labelled data measures it.
+- Instructions written in a letter are not flagged by any rule. They cannot pick the route, and every value
+  must still be found in the letter (sample 9 is caught by its hedged amount, not by its instruction), but an
+  instruction could steer the model to the wrong one of two names. A rule that sends such letters to a human
+  needs a prompt change (the model quoting any instruction it sees), so a `PROMPT_VERSION` bump and a paid run.
 - Grounding is whole-word substring matching. Robust to whitespace, not to case, OCR noise or reformatting. Fine
   for `.txt`, insufficient once scans arrive.
 - Number formats. Only `4,250.00` style is parsed. A European `4.250,00` fails the value-vs-quote check
   and goes to a human (safe, but noisy). Marked `shortcut:` in `rules.py`.
 - IBAN check is shape + mod-97, with no per-country length table. Also a `shortcut:` comment.
 - Rule changes vs old decisions: each record stores `rules_version` and `prompt_version`, but there is no
-  migration or replay tooling yet, and no Alembic: the schema is created on startup.
+  migration or replay tooling yet, and no Alembic: the schema is created on startup. `GET /decisions/{id}`
+  rebuilds the stored decision JSON into today's `DecisionResponse`, so a breaking change to `Decision` would
+  make old records unreadable. Version the readers along with the migrations.
 - Sync rules and SQLite calls run in a worker thread (`asyncio.to_thread`), not on the event loop. Fine at
   prototype volume; move to a worker queue or an async driver under real load.
+- A hung model call holds its request for up to about a minute and a half (30 s timeout per attempt, two
+  Anthropic SDK retries) before it fails to a human. Fine for the workbench; a queue takes it off the request.
 - Demo mode switches on by itself when no key is set. That's convenient for a prototype. In production, set
   `PORTERS_EXTRACTOR=llm`, and the app refuses to start without a key.
 - Letters contain personal data and are stored in plain SQLite with no retention policy. Not acceptable

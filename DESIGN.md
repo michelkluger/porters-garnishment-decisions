@@ -20,7 +20,8 @@ In scope:
 
 Out of scope (deliberately): executing, booking or reversing a seizure; idempotency / duplicate letters;
 multi-tenancy; authentication; OCR and PDFs (the page accepts `.txt` only); queueing; linking letters of the
-same case; data retention and PII handling.
+same case; data retention and PII handling; checking that a letter is genuine (a forged letter can print any
+IBAN it likes, so that is a job for the intake channel and signatures, not for the extraction).
 
 ## Where confidence comes from
 
@@ -45,14 +46,16 @@ any `auto` is already a gain. Start strict, loosen only with measured evidence (
 
 A reject is also an automatic decision, and ignoring a valid order is an incident too. So rejects fire
 only on evidence that is printed in the letter: "no amount" needs both the model *and* the code's own scan to
-find none; a malformed case reference must appear verbatim in the letter; "not a garnishment" is the model's
-judgement, so it rejects only a letter that cites no EUR sum. A model that says "absent" while the letter
-contains a figure is a *miss* and goes to a human, not to reject.
+find none (no EUR figure, and no euros named in words either, since a sum can be written out); a malformed case
+reference must appear verbatim in the letter; "not a garnishment" is the model's judgement, so it rejects only a
+letter that cites no EUR sum, in figures or in words. A model that says "absent" while the letter cites a sum is
+a *miss* and goes to a human, not to reject.
 
-## The rules (`backend/app/decisions/rules.py`, rules version 2)
+## The rules (`backend/app/decisions/rules.py`)
 
 All rules are always evaluated; the route is the most severe that fired (reject > needs_human > auto); the
-first such rule in a fixed order is the `primary_rule`.
+first such rule in a fixed order is the `primary_rule`. `RULES_VERSION` goes up whenever a change can route a
+letter differently, and every decision stores the version that made it.
 
 - **Reject:** `NOT_A_GARNISHMENT`, `CASE_REFERENCE_MISSING`, `CASE_REFERENCE_MALFORMED`, `AMOUNT_MISSING`,
   `AMOUNT_NOT_POSITIVE`. Each only on grounded evidence, as above. On a restriction the two amount rules go
@@ -61,12 +64,13 @@ first such rule in a fixed order is the `primary_rule`.
   `*_VALUE_NOT_IN_QUOTE` (misread; a name or case reference must appear whole and exactly as written, so
   `AB-1042/2` is not in `AB-1042/24`), `*_UNCERTAIN` (model said approximate/partial/ambiguous),
   `*_HAS_ALTERNATIVES` (rival values for a single-valued field; for the IBAN and case reference also any other
-  one printed in the letter, listed by the model or not), `*_MISSED` (model says absent, letter has it).
+  one printed in the letter, listed by the model or not), `*_MISSED` (model says absent, letter has it; for the
+  amount, an EUR figure or euros named in words).
 - **Needs human, field-specific:** `DEBTOR_NAME_PARTIAL` (initial-only, one word, or title + surname),
-  `AMOUNT_NOT_A_FIGURE`, `AMOUNT_HEDGED`, `AMOUNT_NOT_EUR`, `AMOUNT_UNEXPLAINED_FIGURES`,
-  `RESTRICTION_NOT_REDUCING`, `ACCOUNT_IBAN_INVALID`, `ACCOUNT_IBAN_MISSING`, `DEBTOR_NAME_MISSING`,
-  `DOCUMENT_TYPE_NOT_IN_LETTER`, `NOT_A_GARNISHMENT_UNCONFIRMED` (model says "not a garnishment", but the letter
-  cites an EUR sum).
+  `AMOUNT_NOT_A_FIGURE`, `AMOUNT_UNPARSEABLE` (the model's value is not a number), `AMOUNT_HEDGED`,
+  `AMOUNT_NOT_EUR`, `AMOUNT_UNEXPLAINED_FIGURES`, `RESTRICTION_NOT_REDUCING`, `ACCOUNT_IBAN_INVALID`,
+  `ACCOUNT_IBAN_MISSING`, `DEBTOR_NAME_MISSING`, `DOCUMENT_TYPE_NOT_IN_LETTER`, `NOT_A_GARNISHMENT_UNCONFIRMED`
+  (model says "not a garnishment", but the letter cites an EUR sum, in figures or words).
 - **Needs human, system:** `EXTRACTION_FAILED` (model down, refusal, schema-invalid output), `RULES_FAILED`
   (a bug in the rules; also returned as `500`).
 
@@ -102,7 +106,8 @@ from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 
   more recorded signal, but routed on only once calibrated against real outcomes.
 - **One model call vs asking twice and comparing (self-consistency):** disagreement is a strong uncertainty
   signal, but it doubles cost and latency. The grounding checks catch most of what it would. It is the first upgrade to try.
-- **Fail to human on model errors**, not `503`: the letter is stored and routed; nothing is lost. Bugs in the
+- **Fail to human on model errors**, not `503`: the letter is stored and routed; nothing is lost. A hung call
+  counts as an error: it times out after 30 s per attempt (the provider SDK retries on top). Bugs in the
   rules still return `500` so they get noticed, but the letter is stored first as `RULES_FAILED`.
 - **Prompt injection:** the letter is wrapped and declared untrusted, but the real defence is structural:
   the model cannot pick the route, every value must be found in the letter, and its document type alone cannot
@@ -135,7 +140,8 @@ The full build after this slice, in order:
 
 ## Where I deliberately stopped
 
-I stopped at the decision. The rules have not been tuned on real letters: the samples are three given plus six I wrote,
-and the prompt has not yet been run against the real model (no key in this environment). Open decisions I did
+I stopped at the decision. The rules have not been tuned on real letters: the samples are three given plus six I wrote.
+The live prompt has been run once, over those 9 samples with Haiku 5.5 and Opus 5.5 (2026-11-03, NOTES decision
+4): a smoke test, not an evaluation. Open decisions I did
 not resolve on my own are listed in `NOTES.md`; where code needed some behaviour, it takes the safe side
 (`needs_human`) and is marked `OPEN` in a comment.
