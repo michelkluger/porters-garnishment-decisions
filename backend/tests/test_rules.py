@@ -252,6 +252,9 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         (LETTER_1.replace("Jordan A. Meyer", "Mr. Meyer"), ex1(debtor_name=f("Mr. Meyer")), "DEBTOR_NAME_PARTIAL"),
         (LETTER_1, ex1(amount=amount("NaN", "Amount to seize: EUR 4,250.00")), "AMOUNT_UNPARSEABLE"),
         (LETTER_1.replace("Amount to seize: EUR", "Amount (EUR):"), ex1(amount=no_amount()), "AMOUNT_MISSED"),
+        # a sum written only in words has no figure to scan for, but a model that missed it must not cause a reject
+        (LETTER_2, ex2().model_copy(update={"amount": no_amount()}), "AMOUNT_MISSED"),
+        (LETTER_2, ex2().model_copy(update={"document_type": DocumentType.OTHER}), "NOT_A_GARNISHMENT_UNCONFIRMED"),
         # the shortest quote "EUR 3,000" leaves out the hedge just before it on the same line
         (LETTER_9, ex9(), "AMOUNT_HEDGED"),
         (LETTER_9.replace("approximately", "ca."), ex9(), "AMOUNT_HEDGED"),
@@ -283,6 +286,8 @@ def test_sample_3_misreadings_need_human(extraction: Extraction, rule: str) -> N
         "title-and-surname",
         "nan-amount",
         "missed-amount-eur-label",
+        "missed-amount-in-words",
+        "other-with-sum-in-words",
         "hedge-outside-quote",
         "ca-hedge-outside-quote",
         "second-iban-in-letter",
@@ -328,8 +333,8 @@ HEARING = "DISTRICT COURT OF EXAMPLETON\nNotice of Hearing\nCase reference: CD-2
     ("text", "extraction", "rule"),
     [
         (NO_AMOUNT_LETTER, ex1(amount=no_amount()), "AMOUNT_MISSING"),
-        # "eur" inside a word is not a currency
-        (NO_AMOUNT_LETTER + "Monsieur 12, Ingenieur 1990\n", ex1(amount=no_amount()), "AMOUNT_MISSING"),
+        # "eur" or "euro" inside a word is not a currency
+        (NO_AMOUNT_LETTER + "Monsieur 12, Ingenieur 1990, European Court\n", ex1(amount=no_amount()), "AMOUNT_MISSING"),
         (NO_REF_LETTER, ex1(case_reference=none()), "CASE_REFERENCE_MISSING"),
         (ZERO_LETTER, ex1(amount=amount("0.00", "Amount to seize: EUR 0.00")), "AMOUNT_NOT_POSITIVE"),
         (BAD_REF_LETTER, ex1(case_reference=f("AB1042-24", "Case reference: AB1042-24")), "CASE_REFERENCE_MALFORMED"),

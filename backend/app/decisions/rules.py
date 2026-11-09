@@ -20,7 +20,7 @@ from .schema import (
     Status,
 )
 
-RULES_VERSION = "3"
+RULES_VERSION = "4"
 
 NH, REJECT = Route.NEEDS_HUMAN, Route.REJECT
 _SEVERITY = {Route.AUTO: 0, Route.NEEDS_HUMAN: 1, Route.REJECT: 2}
@@ -34,6 +34,7 @@ _NUMBER = r"-?\d(?:[\d.,]*\d)?"  # the whole printed number, so "4.250,00" is ne
 _EUR_AMOUNT = re.compile(
     rf"(?:\bEUR|€)[\s:)]*({_NUMBER})|(?<![\d,.])({_NUMBER})\s*(?:€|(?:EUR|euros?)\b)", re.IGNORECASE
 )
+_EUR_WORD = re.compile(r"\b(?:EUR|euros?)\b|€", re.IGNORECASE)  # a sum may be written only in words
 _HEDGE = re.compile(
     r"\b(?:approx\w*|about|around|circa|roughly|estimated|in the region of|or so)\b|\bca\.", re.IGNORECASE
 )
@@ -83,6 +84,14 @@ def _eur_amounts(text: str) -> set[Decimal]:
     # read a non-English number as European ("4.250,00"): the letter still cites a sum, so a human checks it
     nums = [n if re.fullmatch(_FIGURE, n) else n.replace(".", "").replace(",", ".") for n in nums]
     return {d for n in nums if (d := _dec(n)) is not None}
+
+
+def _cites_eur(text: str, figures: set[Decimal]) -> str | None:
+    """Describe how the letter cites money: its EUR figures, or else the line naming euros. None if it cites none."""
+    if figures:
+        return f"EUR {sorted(map(str, figures))}"
+    m = _EUR_WORD.search(text)
+    return f"euros in words: {_quote_lines(m.group(), text).strip()!r}" if m else None
 
 
 def _compact(s: str) -> str:
@@ -238,8 +247,9 @@ def _amount(ex: Extraction, text: str) -> list[RuleResult]:
     # a restriction to EUR 0, or lifted with no figure, is a valid release: a human checks it, never a reject
     hard = NH if is_restriction else REJECT
     if (raw := _present(f)) is None:
-        if in_letter:
-            missed = f"model found none, but the letter contains EUR {shown}"
+        # a sum in words has no figure for the scan, but its letter is not one without an amount
+        if cited := _cites_eur(text, in_letter):
+            missed = f"model found none, but the letter cites {cited}"
             return [_rule("AMOUNT_MISSED", name, NH, fired=True, detail=(missed, ""))]
         return [_rule("AMOUNT_MISSING", name, hard, fired=True, detail=("no amount in the letter", ""))]
 
@@ -340,7 +350,7 @@ def _document(ex: Extraction, text: str) -> list[RuleResult]:
     grounded = _verbatim(ex.document_type_quote, text)
     other = ex.document_type is DocumentType.OTHER and grounded
     # The type is the model's judgement, so it alone must not reject a letter that names an EUR sum.
-    eur = sorted(map(str, _eur_amounts(text)))
+    cited = _cites_eur(text, _eur_amounts(text))
     return [
         _rule(
             "DOCUMENT_TYPE_NOT_IN_LETTER",
@@ -353,16 +363,16 @@ def _document(ex: Extraction, text: str) -> list[RuleResult]:
             "NOT_A_GARNISHMENT",
             None,
             REJECT,
-            fired=other and not eur,
+            fired=other and not cited,
             detail=(f"not a seizure order: {ex.document_type_quote!r}", f"document is a {ex.document_type}"),
         ),
         _rule(
             "NOT_A_GARNISHMENT_UNCONFIRMED",
             None,
             NH,
-            fired=other and bool(eur),
+            fired=other and bool(cited),
             detail=(
-                f"model says not a seizure order, but the letter cites EUR {eur}",
+                f"model says not a seizure order, but the letter cites {cited}",
                 "no conflict between document type and letter",
             ),
         ),
