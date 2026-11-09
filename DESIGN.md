@@ -107,7 +107,10 @@ from disk, `404` if unknown. Input is validated at the boundary (non-blank, ≤ 
 - **One model call vs asking twice and comparing (self-consistency):** disagreement is a strong uncertainty
   signal, but it doubles cost and latency. The grounding checks catch most of what it would. It is the first upgrade to try.
 - **Fail to human on model errors**, not `503`: the letter is stored and routed; nothing is lost. A hung call
-  counts as an error: it times out after 30 s per attempt (the provider SDK retries on top). Bugs in the
+  counts as an error: it times out after 30 s per attempt (the provider SDK retries on top). So does a runaway
+  one: a reading is about 200 tokens, and output is capped at 2,000, so a letter cannot make the model write
+  (and bill) up to its 128k maximum; the cap also keeps the call unstreamed, which is what lets the 30 s bound
+  the whole attempt. Bugs in the
   rules still return `500` so they get noticed, but the letter is stored first as `RULES_FAILED`.
 - **Prompt injection:** the letter is wrapped and declared untrusted, but the real defence is structural:
   the model cannot pick the route, every value must be found in the letter, and its document type alone cannot

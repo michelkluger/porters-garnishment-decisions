@@ -68,10 +68,15 @@ class LLMExtractor:
         """Set up the agent for a Pydantic AI model string."""
         self.model_name = model
         # Missing credentials fail here, at startup; keyless runs use RecordedExtractor (demo mode).
-        # A hung provider must fail the call (and so go to a human), not hold the request open. 30 s is per attempt;
-        # the provider SDK retries on top (Anthropic: twice).
+        # A reading is ~200 tokens; unset, max_tokens is the model's maximum (128k on Haiku), which a letter could
+        # ask the model to fill at our cost. The cap also keeps the call unstreamed, so the 30 s timeout bounds the
+        # whole attempt (streamed, it would only bound the gap between chunks). The provider SDK retries on top
+        # (Anthropic: twice). A cut-off or timed-out reading fails, and the letter goes to a human.
         self._agent = Agent(
-            model, output_type=NativeOutput(Extraction), instructions=PROMPT, model_settings={"timeout": 30}
+            model,
+            output_type=NativeOutput(Extraction),
+            instructions=PROMPT,
+            model_settings={"timeout": 30, "max_tokens": 2_000},
         )
 
     async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:

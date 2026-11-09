@@ -31,6 +31,9 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
 9. **Docstrings on the LLM contract.** The six classes the model fills in (`Status` … `Extraction` in
    `schema.py`) carry `noqa: D101`: Pydantic sends class docstrings to the model as schema descriptions, so
    adding them changes the prompt. Add them with a `PROMPT_VERSION` bump and a paid `test_samples_llm` run.
+10. **Letter size limit.** `POST /decisions` accepts up to 50,000 characters (about 12,000 input tokens). Real
+   letters of one to three pages are a few thousand characters, so a lower limit would cut what one abusive
+   request can cost, at the risk of refusing a long genuine letter. Which length to allow is open.
 
 ## Next steps
 
@@ -75,6 +78,11 @@ Each runs the safe default today and is marked `OPEN` or `TODO(brand)` in the co
   prototype volume; move to a worker queue or an async driver under real load.
 - A hung model call holds its request for up to about a minute and a half (30 s timeout per attempt, two
   Anthropic SDK retries) before it fails to a human. Fine for the workbench; a queue takes it off the request.
+- Exposed as is, the API is a paid LLM for anyone who can reach it: no login, no rate limit, and the response
+  returns the model's raw reading, whose free-text fields (`role`, `value`, quotes) a "letter" can ask the model
+  to fill with an answer to anything. Today both servers listen on 127.0.0.1 only, and a reading is capped at
+  2,000 output tokens. Before any deployment: authentication, a per-caller rate limit, a spend limit on the API
+  key, and an alert on `cost_usd` (already stored per decision).
 - Demo mode switches on by itself when no key is set. That's convenient for a prototype. In production, set
   `PORTERS_EXTRACTOR=llm`, and the app refuses to start without a key.
 - Letters contain personal data and are stored in plain SQLite with no retention policy. Not acceptable
