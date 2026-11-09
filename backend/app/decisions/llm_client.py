@@ -68,7 +68,11 @@ class LLMExtractor:
         """Set up the agent for a Pydantic AI model string."""
         self.model_name = model
         # Missing credentials fail here, at startup; keyless runs use RecordedExtractor (demo mode).
-        self._agent = Agent(model, output_type=NativeOutput(Extraction), instructions=PROMPT)
+        # A hung provider must fail the call (and so go to a human), not hold the request open. 30 s is per attempt;
+        # the provider SDK retries on top (Anthropic: twice).
+        self._agent = Agent(
+            model, output_type=NativeOutput(Extraction), instructions=PROMPT, model_settings={"timeout": 30}
+        )
 
     async def extract(self, text: str, usage: RunUsage | None = None) -> Extraction:
         """Ask the model what the letter says. `usage` collects tokens and cost even if the run fails."""
