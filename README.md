@@ -4,6 +4,11 @@ A court letter comes in. An LLM reads it, deterministic rules route it to `auto`
 and the decision is stored with the evidence that produced it. `DESIGN.md` explains why; `NOTES.md` lists
 next steps, risks and the decisions still open.
 
+**Presentation:** https://michelkluger.github.io/porters-garnishment-decisions/ (or open `docs/index.html`
+locally). An animated walk-through of the design, about eight minutes: press → to advance, N for speaker notes.
+It is one self-contained file apart from Google Fonts, and its routing scenes replay the recorded readings in
+`backend/recordings/` as they were when it was built.
+
 ![The workbench: a drop zone for court letters, and one card per decided letter with its route](docs/workbench.png)
 
 ## What a decision card shows
@@ -53,6 +58,7 @@ backend/app/
 backend/recordings/  model readings of samples/, replayed in demo mode
 backend/scripts/     record_samples.py: re-records them with the live model
 frontend/   Bun + React 19 + shadcn/ui + Tailwind 4: drag-and-drop test workbench
+docs/       index.html: the presentation (served by GitHub Pages); screenshots for this README
 samples/    labelled letters: <nn>-<name>.<expected route>.txt
 ```
 
