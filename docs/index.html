@@ -491,6 +491,7 @@ Registrar, District Court of Exampleton<span class="stamp"><b>AUTO</b><small>29 
   <span class="where" id="where"></span>
   <span class="spacer"></span>
   <span class="timer" id="timer" title="Elapsed time. T resets it.">00:00</span>
+  <button id="snd-btn" aria-pressed="true" title="A quiet generated soundtrack">Sound<kbd>M</kbd></button>
   <button id="notes-btn" aria-pressed="false">Notes<kbd>N</kbd></button>
   <button id="fs-btn">Full screen<kbd>F</kbd></button>
 </nav>
@@ -780,6 +781,46 @@ renderN();
   }).join('');
 }
 
+/* synth:start: a quiet generated pad, one chord per chapter (the last resolves the finale), and a soft bell now and then */
+function makeSynth(ctx) {
+  const hz = m => 440 * 2 ** ((m - 69) / 12);
+  const CHORDS = [[50, 57, 64, 66], [43, 50, 59, 66], [40, 47, 55, 62, 66], [47, 54, 57, 62], [45, 52, 59, 61], [38, 50, 57, 64, 66, 69]];
+  const master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+  const len = ctx.sampleRate * 4 | 0, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3; }
+  const verb = ctx.createConvolver(); verb.buffer = ir;
+  const wet = ctx.createGain(); wet.gain.value = 0.5; verb.connect(wet).connect(master);
+  const tone = ctx.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 1100; tone.connect(master); tone.connect(verb);
+  const fade = (p, v, t, s) => { p.cancelScheduledValues(t); p.setValueAtTime(p.value, t); p.linearRampToValueAtTime(v, t + s); };
+  let voices = [], chord = -1;
+  return {
+    master, fade,
+    pad(i) {
+      if (i === chord) return;
+      chord = i;
+      const t = ctx.currentTime, notes = CHORDS[i];
+      for (const v of voices) { fade(v.env.gain, 0, t, 4); v.oscs.forEach(o => o.stop(t + 4.1)); }
+      voices = notes.map((n, k) => {
+        const env = ctx.createGain(), trem = ctx.createGain(), lfo = ctx.createOscillator(), depth = ctx.createGain();
+        env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime((k ? 0.05 : 0.07) / notes.length, t + 5);
+        trem.gain.value = 0.75; lfo.frequency.value = 0.04 + Math.random() * 0.08; depth.gain.value = 0.25;
+        lfo.connect(depth).connect(trem.gain); env.connect(trem).connect(tone);
+        const oscs = [['sine', -4], ['triangle', 4]].map(([type, cents]) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz(n); o.detune.value = cents; o.connect(env); return o; });
+        oscs.push(lfo); oscs.forEach(o => o.start(t));
+        return {env, oscs};
+      });
+    },
+    bell(delay = 0) {
+      const t = ctx.currentTime + delay, notes = CHORDS[Math.max(chord, 0)];
+      let n = notes[1 + Math.floor(Math.random() * (notes.length - 1))];
+      while (n < 72) n += 12;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.02, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 4); g.connect(tone);
+      [[1, 1], [2.76, 0.1]].forEach(([r, a]) => { const o = ctx.createOscillator(), og = ctx.createGain(); o.frequency.value = hz(n) * r; og.gain.value = a; o.connect(og).connect(g); o.start(t); o.stop(t + 4.1); });
+    },
+  };
+}
+/* synth:end */
+
 /* ---------- playing a beat ---------- */
 let B = -1;
 const chapters = $('#chapters');
@@ -826,7 +867,43 @@ function go(b) {
   $('#notes-h').textContent = `${CH[beat.ch][0]} · ${CH[beat.ch][1]} · beat ${b + 1}`;
   $('#notes-p').textContent = beat.note;
   try { history.replaceState(null, '', '#b' + b); } catch {}
+  soundBeat(b);
 }
+
+/* ---------- sound: browsers let it start only after a key or a click; M turns it off ---------- */
+const snd = {on: true, ctx: null, synth: null, lastBell: 0};
+try { snd.on = localStorage.getItem('gr-sound') !== 'off'; } catch {}
+const sndBtn = $('#snd-btn');
+sndBtn.setAttribute('aria-pressed', String(snd.on));
+const chordOf = b => b === LAST ? 5 : BEATS[b].ch;
+function soundBeat(b) {
+  if (!snd.on || !snd.synth) return;
+  snd.synth.pad(chordOf(b));
+  if (Date.now() - snd.lastBell > 1500) { snd.lastBell = Date.now(); snd.synth.bell(0.5); }
+}
+function soundOn() {
+  if (!snd.on) return;
+  if (!snd.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    snd.ctx = new AC(); snd.synth = makeSynth(snd.ctx);
+    const drift = () => { if (snd.on && snd.ctx.state === 'running' && Math.random() < 0.6) snd.synth.bell(); setTimeout(drift, 7000 + Math.random() * 7000); };
+    setTimeout(drift, 6000);
+  }
+  snd.ctx.resume();
+  snd.synth.fade(snd.synth.master.gain, 1, snd.ctx.currentTime, 3);
+  snd.synth.pad(chordOf(B));
+}
+function soundToggle() {
+  snd.on = !snd.on;
+  try { localStorage.setItem('gr-sound', snd.on ? 'on' : 'off'); } catch {}
+  sndBtn.setAttribute('aria-pressed', String(snd.on));
+  if (snd.on) soundOn();
+  else if (snd.ctx) { snd.synth.fade(snd.synth.master.gain, 0, snd.ctx.currentTime, 0.8); setTimeout(() => { if (!snd.on) snd.ctx.suspend(); }, 900); }
+}
+const wake = () => { if (!snd.ctx || snd.ctx.state !== 'running') soundOn(); };
+addEventListener('pointerdown', wake, true);
+addEventListener('keydown', wake, true);
 
 /* ---------- controls ---------- */
 const next = () => go(B + 1), prev = () => go(B - 1);
@@ -835,6 +912,7 @@ const fullscreen = () => { try { const p = document.fullscreenElement ? document
 $('#prev').onclick = e => { e.currentTarget.blur(); prev(); };
 $('#next').onclick = e => { e.currentTarget.blur(); next(); };
 $('#notes-btn').onclick = e => { e.currentTarget.blur(); toggleNotes(); };
+sndBtn.onclick = e => { e.currentTarget.blur(); soundToggle(); };
 $('#fs-btn').onclick = e => { e.currentTarget.blur(); fullscreen(); };
 addEventListener('fullscreenchange', fit);
 let t0 = Date.now();
@@ -850,6 +928,7 @@ addEventListener('keydown', e => {
   else if (k === 'Home') go(0);
   else if (k === 'End') go(LAST);
   else if (k === 'n' || k === 'N') toggleNotes();
+  else if (k === 'm' || k === 'M') soundToggle();
   else if (k === 'f' || k === 'F') fullscreen();
   else if (k === 't' || k === 'T') t0 = Date.now();
   else if (/^[1-5]$/.test(k)) go(BEATS.findIndex(x => x.ch === +k - 1));

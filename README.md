@@ -5,8 +5,9 @@ and the decision is stored with the evidence that produced it. `DESIGN.md` expla
 next steps, risks and the decisions still open.
 
 **Presentation:** https://michelkluger.github.io/porters-garnishment-decisions/ (or open `docs/index.html`
-locally). An animated walk-through of the design, about eight minutes: press → to advance, N for speaker notes.
-It is one self-contained file apart from Google Fonts, and its routing scenes replay the recorded readings in
+locally). An animated walk-through of the design, about eight minutes: press → to advance, N for speaker notes,
+M to silence its soundtrack (a quiet pad generated in the browser, one chord per chapter). It is one
+self-contained file apart from Google Fonts, and its routing scenes replay the recorded readings in
 `backend/recordings/` as they were when it was built.
 
 ![The workbench: a drop zone for court letters, and one card per decided letter with its route](docs/workbench.png)
